@@ -13,10 +13,9 @@
 一個可互動的、單頁式的網頁視覺化作品（Web-based data visualization）。
 
 ## 2. 資料規格 Data Specification
-這是與 AI 協作時最重要的部分之一。AI 需要知道它正在處理什麼樣的資料。
 
 ### 資料來源 (Data Source)
-透過作者的 Andriod 手機，藉由 StayFree 這個 App monitor 並匯出的 csv 資料。
+透過開發者的 Andriod 手機，藉由 StayFree 這個 App monitor 並匯出的 csv 資料。
 
 ### 資料結構 (Data Schema)
 CSV 資料已經過前處理，包含除去空值和改欄位名稱等提高可讀性等的手續。
@@ -79,66 +78,31 @@ dtypes: int64(39), object(2)
 資料在進入這個專案前已經過初步處理，目前不打算對資料進行更多處理。
 
 ## 3. 視覺化設計與敘事 (Visualization Design & Narrative)
-定義「如何呈現」這個故事。
-
-### 核心圖表：累計圖 (The "Accumulation" Chart):
-
-描述： 使用 d3.js 的 d3.area() 製作一個累計面積圖 (Cumulative Area Chart)。
-
-X 軸： 時間（例如：過去 365 天）。
-
-Y 軸： 累計使用總時數。
-
-敘事重點： 使用者將會看到這條線如何以驚人的速度向上攀升，直觀地展示「日積月累」的效果。
-
-### 輔助圖表 (Supporting Charts):
-
-每日使用長條圖 (Daily Usage Bar Chart): 顯示每天的使用量，作為累計圖的對比。
-
-應用程式佔比 (App Breakdown): 使用樹狀圖 (Treemap) 或氣泡圖 (Bubble Chart) 顯示哪些 App 佔用了最多時間。
-
-時間熱圖 (Calendar Heatmap): 類似 GitHub 貢獻圖，顯示一年中每天的使用強度。
 
 ### 視覺風格 (Visual Style)
-範例內容： 簡潔、現代。使用有意義的顏色（例如，高使用量顯示為警示性的暖色調）。
+範例內容： 簡潔、現代。
 
 ## 4. 技術堆疊 (Tech Stack)
 ### 核心函式庫 (Core Library)
-d3.js (例如 v7 或 v8)。
+d3.js。透過 ESM + CDN 方式載入。
+使用的版本："https://cdn.jsdelivr.net/npm/d3@7/+esm"
 
 ### 前端架構 (Frontend)
-純 HTML/CSS/JavaScript (ES6+)。(除非您想整合 React/Vue，否則建議保持簡單)。
+純 HTML/CSS/JavaScript。
 
 ### 資料載入 (Data Loading)
-使用 d3.json() 或 d3.csv() 非同步載入資料。
+使用 d3.csv() 非同步載入資料。
 
 ### 開發環境 (Environment)
 使用本地伺服器（如 http-server）以避免 CORS 錯誤。
 
-## 5. 互動功能 (Key Features & Interactivity)
-定義使用者可以「做什麼」。
+## 5. 呈現與互動、功能 (Key Features & Interactivity)
 
-### 工具提示 (Tooltips)
-需求： 滑鼠懸停（Hover）在累計圖的某個點上時，顯示該日期的「當日使用時數」和「累計總時數」。
+將日期以順時針方式，由內至外的螺旋狀排列呈現各日的使用狀況。且這個螺旋的一圈是以一個星期為單位。也就是說，12 點鐘方向的日子總是星期一。因為考慮到可能每日使用時間會有很大的落差，使得排列成整齊的圓圈會有困難，因此，單日在螺旋排列中的長度(或面積)是一致的。而我會使用不同顏色顯示呈現該日使用的活躍狀況。
 
-### 刷選與連動 (Brushing & Linking)
-需求： 在每日長條圖上刷選（Brush）一個時間範圍（例如：五月的第一周），累計圖和 App 佔比圖應動態更新，只顯示該範圍的數據。
-
-### 過場動畫 (Transitions)
-需求： 數據更新或切換視圖時，使用 d3.js 的 transition() 產生平滑的動畫效果（例如，長條圖的高度變化）。
+當使用者 hover 在某日的資料時，會出現一個 modal 展示該日詳細使用狀況。包含使用的 APP 名稱與個別使用時間
 
 ### 響應式設計 (Responsive Design)
 視覺化圖表應能適應不同螢幕尺寸
 
 ## 6. 開發里程碑 (Development Milestones)
-這部分用來追蹤進度。
-
-[M1] 資料處理： 成功載入並解析 (Parse) 資料，完成所有前處理邏輯。
-
-[M2] 靜態圖表： 渲染出核心的「累計面積圖」和「每日長條圖」（無互動）。
-
-[M3] 互動功能： 實現 Tooltips 和 Brushing & Linking。
-
-[M4] 輔助圖表： 建立 App 佔比的樹狀圖。
-
-[M5] 樣式與部屬： 調整 CSS 樣式、完成響應式設計並部屬到網頁空間。
