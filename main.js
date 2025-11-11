@@ -129,13 +129,13 @@ async function transformData(rawData) {
     processedData.sort((a, b) => a.dateObj - b.dateObj);
 
     // (步驟 4: 計算 weekNumber - *** 必須在 sort 之後 ***)
-    const startDate = processedData[0].dateObj; // 現在這裡是安全的
+    // const startDate = processedData[0].dateObj; // 現在這裡是安全的
     
-    processedData.forEach(d => {
-        // d3.timeDay.count 會計算相差多少天
-        const dayDiff = d3.timeDay.count(startDate, d.dateObj);
-        d.weekNumber = Math.floor(dayDiff / 7); // 0 = 第一週, 1 = 第二週...
-    });
+    // processedData.forEach(d => {
+    //     // d3.timeDay.count 會計算相差多少天
+    //     const dayDiff = d3.timeDay.count(startDate, d.dateObj);
+    //     d.weekNumber = Math.floor(dayDiff / 7); // 0 = 第一週, 1 = 第二週...
+    // });
 
     // console.log("Processed Data:", processedData);
     return processedData;
@@ -167,15 +167,20 @@ function renderSpiral(data, svg) {
     // --- 設定比例尺 (Scales) ---
 
     // 1. 半徑 (Radius) 比例尺
-    // 根據 'weekNumber' 決定該區塊離中心多遠
-    const maxWeek = d3.max(data, d => d.weekNumber);
-    // 內圈半徑從 40 開始，確保中心不會太擁擠
-    const innerRadiusStart = 40; 
-    const radiusScale = d3.scaleLinear()
-        .domain([0, maxWeek + 1]) // 多+1 讓外圈有空間
-        .range([innerRadiusStart, radius]); // 從內到外
+    // --- NEW LOGIC ---
+    // The radius now depends on the total number of days (data.length),
+    // not the number of weeks. This creates a continuous spiral.
+    const innerRadiusStart = 40; // Spiral starts at 40px from center
+    const maxDayIndex = data.length - 1; // e.g., 37 (for 38 days)
 
-    // 2. 顏色 (Color) 比例尺 (更新 Domain)
+    // We map the day index [0, 37] to a radius range.
+    // The range ends at 'radius - DAY_SEGMENT_HEIGHT', which is the
+    // *inner radius* of the *last* day segment.
+    const radiusScale = d3.scaleLinear()
+        .domain([0, maxDayIndex])
+        .range([innerRadiusStart, radius - DAY_SEGMENT_HEIGHT]);
+
+    // 2. 顏色 (Color) 比例尺 (This remains the same)
     const maxUsage = d3.max(data, d => d.totalUsageSeconds);
     colorScale.domain([0, maxUsage]);
 
@@ -183,20 +188,30 @@ function renderSpiral(data, svg) {
 
     // 1. 建立 Arc 產生器
     const arcGenerator = d3.arc()
-        .innerRadius(d => radiusScale(d.weekNumber) + WEEK_PADDING)
-        .outerRadius(d => radiusScale(d.weekNumber) + DAY_SEGMENT_HEIGHT)
+        // --- MODIFIED ---
+        // The radius is now calculated using the index 'i' of the data array,
+        // which represents the day number (0 to 37).
+        // This ensures each day is slightly further out than the last.
+        .innerRadius((d, i) => radiusScale(i)) 
+        // The outer radius is simply the inner radius + the segment height.
+        // We have removed the old 'WEEK_PADDING' logic to make the spiral continuous.
+        .outerRadius((d, i) => radiusScale(i) + DAY_SEGMENT_HEIGHT) 
+        // --- (Angle logic remains the same) ---
         .startAngle(d => d.dayOfWeek * DAY_ANGLE + MONDAY_OFFSET + DAY_PADDING / 2)
         .endAngle(d => (d.dayOfWeek + 1) * DAY_ANGLE + MONDAY_OFFSET - DAY_PADDING / 2)
-        .cornerRadius(3); // 圓角
+        .cornerRadius(3); // Apply a slight corner radius
 
     // 2. 資料綁定 (Data Join)
     g.selectAll("path.day-segment")
         .data(data)
         .join("path")
         .attr("class", "day-segment")
-        .attr("d", arcGenerator)
+        // --- MODIFIED ---
+        // The arc generator now needs both 'd' (data) and 'i' (index)
+        // to calculate the radius, so we pass 'i' to it.
+        .attr("d", (d, i) => arcGenerator(d, i)) 
         .attr("fill", d => colorScale(d.totalUsageSeconds))
-        // --- 互動 (Interactivity) ---
+        // --- (Interactivity remains the same) ---
         .on("mouseover", (event, d) => {
             showModal(event, d);
         })
@@ -204,7 +219,7 @@ function renderSpiral(data, svg) {
             hideModal();
         });
 
-    // 3. 繪製圖例
+    // 3. 繪製圖例 (This remains the same)
     renderLegend(colorScale);
 }
 
