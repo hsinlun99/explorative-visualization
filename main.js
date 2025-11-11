@@ -22,7 +22,7 @@ const DOT_RADIUS = 3;
 
 // 動畫設定：每天的動畫延遲 (毫秒)
 // 總動畫時長約為：ANIMATION_DAY_DELAY * (總天數)
-const ANIMATION_DAY_DELAY = 40; // 40ms * 38 天 ≈ 1.5 秒動畫
+const ANIMATION_DAY_DELAY = 50; // 50ms * 38 天 ≈ 1.9 秒動畫
 
 // 顏色比例尺 (Quantize Scale): 將使用時間 (連續) 映射到 5 個離散的顏色
 const colorScale = d3.scaleQuantize()
@@ -138,13 +138,16 @@ async function transformData(rawData) {
     const endDate = parseDate("November 4, 2025");
     processedData = processedData.filter(d => d.dateObj <= endDate);
 
-    // 5. 計算 weekNumber - *** 必須在 sort 和 filter 之後 ***
+    // 5. 計算 weekNumber 和 dayIndex - *** 必須在 sort 和 filter 之後 ***
     const startDate = processedData[0].dateObj; // 現在這裡是安全的
-    
-    processedData.forEach(d => {
-        // d3.timeDay.count 會計算相差多少天
+
+    processedData.forEach((d, index) => {
+        // 計算週數
         const dayDiff = d3.timeDay.count(startDate, d.dateObj);
         d.weekNumber = Math.floor(dayDiff / 7); // 0 = 第一週, 1 = 第二週...
+        
+        // 儲存索引，確保 Arc 和 Dot 使用相同的索引系統
+        d.dayIndex = index; // 0 = 第一天, 1 = 第二天, ...
     });
 
     console.log("Processed Data:", processedData);
@@ -160,9 +163,27 @@ async function transformData(rawData) {
  */
 function generateDotData(dayData, radiusScale, colorScale) {
     const allDots = [];
+    console.log("=== generateDotData Debug ===");
+    console.log("First 3 days:");
+    dayData.slice(0, 3).forEach((day, i) => {
+        console.log(`  i=${i}, date=${day.dateString}, dayOfWeek=${day.dayOfWeek}, ` +
+                    `innerR=${radiusScale(i).toFixed(1)}, ` +
+                    `startAngle=${(day.dayOfWeek * DAY_ANGLE + MONDAY_OFFSET).toFixed(2)}`);
+    });
+    console.log("Last 3 days:");
+    dayData.slice(-3).forEach((day, i) => {
+        const actualIndex = dayData.length - 3 + i;
+        console.log(`  i=${actualIndex}, date=${day.dateString}, dayOfWeek=${day.dayOfWeek}, ` +
+                    `innerR=${radiusScale(actualIndex).toFixed(1)}, ` +
+                    `startAngle=${(day.dayOfWeek * DAY_ANGLE + MONDAY_OFFSET).toFixed(2)}`);
+    });
 
-    dayData.forEach((day, i) => {
+    dayData.forEach((day) => {
+        // 使用資料物件中儲存的 dayIndex，確保與 Arc 一致
+        const i = day.dayIndex;
+
         // 取得該日的邊界
+
         const innerR = radiusScale(i);
         const outerR = radiusScale(i) + DAY_SEGMENT_HEIGHT;
         const startAngle = day.dayOfWeek * DAY_ANGLE + MONDAY_OFFSET;
@@ -195,6 +216,7 @@ function generateDotData(dayData, radiusScale, colorScale) {
             });
         }
     });
+    console.log("Total dots:", allDots.length);
 
     return allDots;
 }
@@ -242,20 +264,22 @@ function renderSpiral(data, svg) {
     // 這些 <path> 現在是「隱形」的互動層
 
     // 1. 建立 Arc 產生器 (邏輯不變)
+    // 使用資料物件中的 dayIndex，確保與 Dot 繪製一致
     const arcGenerator = d3.arc()
-        .innerRadius((d, i) => radiusScale(i))
-        .outerRadius((d, i) => radiusScale(i) + DAY_SEGMENT_HEIGHT)
+        .innerRadius(d => radiusScale(d.dayIndex))
+        .outerRadius(d => radiusScale(d.dayIndex) + DAY_SEGMENT_HEIGHT)
         .startAngle(d => d.dayOfWeek * DAY_ANGLE + MONDAY_OFFSET)
         .endAngle(d => (d.dayOfWeek + 1) * DAY_ANGLE + MONDAY_OFFSET)
         .cornerRadius(0); // 方案 B (接縫連續)
 
     // 2. 資料綁定 (Data Join) - [ 已修改 ]
+    // 不再傳入索引參數，因為 arcGenerator 會從資料物件中讀取 dayIndex
     g.selectAll("path.day-segment")
         .data(data)
         .join("path")
         .attr("class", "day-segment") // style.css 會給它 stroke
-        .attr("d", (d, i) => arcGenerator(d, i))
-        .attr("fill", "none") // [ 修改 ] 設為透明！
+        .attr("d", d => arcGenerator(d)) // 只傳入資料物件
+        .attr("fill", "none") // 設為透明，讓底下的點可見
         // 互動 (Interactivity) - (邏輯不變)
         .on("mouseover", (event, d) => {
             showModal(event, d);
@@ -383,6 +407,10 @@ async function main() {
         
         console.log("--- 檢查轉換後的資料 (processedData) ---");
         console.log(processedData);
+
+        console.log("Total days:", processedData.length);
+        console.log("First day:", processedData[0].dateString, processedData[0].dayOfWeek);
+        console.log("Last day:", processedData[processedData.length-1].dateString, processedData[processedData.length-1].dayOfWeek);
 
         // 3. 繪製圖表
         // 建立 SVG 畫布
