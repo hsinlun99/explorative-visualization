@@ -47,6 +47,7 @@ svg {
     stroke: #f4f4f9; /* Gap color between blocks, same as background */
     stroke-width: 2px;
     transition: filter 0.2s ease;
+    pointer-events: fill;
 }
 
 .day-segment:hover {
