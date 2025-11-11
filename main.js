@@ -268,8 +268,8 @@ function renderSpiral(data, svg) {
     const arcGenerator = d3.arc()
         .innerRadius(d => radiusScale(d.dayIndex))
         .outerRadius(d => radiusScale(d.dayIndex) + DAY_SEGMENT_HEIGHT)
-        .startAngle(d => d.dayOfWeek * DAY_ANGLE + MONDAY_OFFSET)
-        .endAngle(d => (d.dayOfWeek + 1) * DAY_ANGLE + MONDAY_OFFSET)
+        .startAngle(d => d.dayOfWeek * DAY_ANGLE)
+        .endAngle(d => (d.dayOfWeek + 1) * DAY_ANGLE)
         .cornerRadius(0); // continuous seams
 
     // 2. Data binding (Data Join)
