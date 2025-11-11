@@ -14,8 +14,6 @@ const margin = { top: 40, right: 40, bottom: 40, left: 40 };
 const WEEK_SEGMENTS = 7; // 一週 7 天
 const DAY_ANGLE = (2 * Math.PI) / WEEK_SEGMENTS; // 每一天的角度
 const MONDAY_OFFSET = -Math.PI / 2; // 將星期一 (12點鐘方向) 設為起始點
-const DAY_PADDING = 0.02; // 每天之間的徑向間隙
-const WEEK_PADDING = 4; // 每週 (圈) 之間的間隙
 const DAY_SEGMENT_HEIGHT = 25; // 每天區塊的「厚度」
 
 // 顏色比例尺 (Quantize Scale): 將使用時間 (連續) 映射到 5 個離散的顏色
@@ -197,9 +195,9 @@ function renderSpiral(data, svg) {
         // We have removed the old 'WEEK_PADDING' logic to make the spiral continuous.
         .outerRadius((d, i) => radiusScale(i) + DAY_SEGMENT_HEIGHT) 
         // --- (Angle logic remains the same) ---
-        .startAngle(d => d.dayOfWeek * DAY_ANGLE + MONDAY_OFFSET + DAY_PADDING / 2)
-        .endAngle(d => (d.dayOfWeek + 1) * DAY_ANGLE + MONDAY_OFFSET - DAY_PADDING / 2)
-        .cornerRadius(3); // Apply a slight corner radius
+        .startAngle(d => d.dayOfWeek * DAY_ANGLE + MONDAY_OFFSET)
+        .endAngle(d => (d.dayOfWeek + 1) * DAY_ANGLE + MONDAY_OFFSET)
+        .cornerRadius(0); // Apply a slight corner radius
 
     // 2. 資料綁定 (Data Join)
     g.selectAll("path.day-segment")
