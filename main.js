@@ -1,86 +1,86 @@
 /* * main.js
- * 手機使用時間螺旋圖 - 核心 D3 程式碼
+ * Mobile Usage Spiral - Core D3 Code
  */
 
-// 從 CDN 載入 D3.js (ESM)
+// Load D3.js from CDN (ESM)
 import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
 
-/* --- 1. 靜態設定 (Constants & Setup) --- */
+/* --- 1. Static Configuration (Constants & Setup) --- */
 
-// SVG 畫布的邊界設定
+// SVG canvas boundary settings
 const margin = { top: 40, right: 40, bottom: 40, left: 40 };
 
-// 螺旋圖設定
-const WEEK_SEGMENTS = 7; // 一週 7 天
-const DAY_ANGLE = (2 * Math.PI) / WEEK_SEGMENTS; // 每一天的角度
-const MONDAY_OFFSET = -Math.PI / 2; // 將星期一 (12點鐘方向) 設為起始點
-const DAY_SEGMENT_HEIGHT = 25; // 每天區塊的「厚度」
-const DOTS_PER_DAY = 100; // 每個區塊生成的點數。警告：此數字 > 100 可能會導致顯著的效能下降 (卡頓)。
+// Spiral configuration
+const WEEK_SEGMENTS = 7; // 7 days per week
+const DAY_ANGLE = (2 * Math.PI) / WEEK_SEGMENTS; // Angle per day
+const MONDAY_OFFSET = -Math.PI / 2; // Set Monday (12 o'clock direction) as starting point
+const DAY_SEGMENT_HEIGHT = 25; // "Thickness" of each day's block
+const DOTS_PER_DAY = 100; // Number of dots generated per block. Warning: This number > 100 may cause significant performance degradation (lag).
 
-// 每個點的半徑 (像素)
+// Radius of each dot (pixels)
 const DOT_RADIUS = 3;
 
-// 動畫設定：每天的動畫延遲 (毫秒)
-// 總動畫時長約為：ANIMATION_DAY_DELAY * (總天數)
-const ANIMATION_DAY_DELAY = 50; // 50ms * 38 天 ≈ 1.9 秒動畫
+// Animation configuration: animation delay per day (milliseconds)
+// Total animation duration approx: ANIMATION_DAY_DELAY * (total days)
+const ANIMATION_DAY_DELAY = 50; // 50ms * 38 days ≈ 1.9 seconds animation
 
-// 顏色比例尺 (Quantize Scale): 將使用時間 (連續) 映射到 5 個離散的顏色
+// Color scale (Quantize Scale): Maps usage time (continuous) to 5 discrete colors
 const colorScale = d3.scaleQuantize()
     .range([
-        "#cce5df", // 非常低
-        "#aee1d4", // 低
-        "#86d1c0", // 中
-        "#5cbea9", // 高
-        "#00a688"  // 非常高 (這是我選的一個色階，您可以替換)
-        // 您也可以用 d3.schemeBlues[5] 或 d3.schemeGreens[5]
+        "#cce5df", // very low
+        "#aee1d4", // low
+        "#86d1c0", // medium
+        "#5cbea9", // high
+        "#00a688"  // very high
+        // You can also use d3.schemeBlues[5] or d3.schemeGreens[5]
     ]);
 
-// DOM 元素選取
+// DOM element selection
 const visContainer = d3.select("#vis-container");
 const modal = d3.select("#modal");
 const legendContainer = d3.select("#legend");
 
-// 格式化函式 (Helper functions)
+// Helper functions for formatting
 const formatTime = (seconds) => {
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
     const s = seconds % 60;
     let parts = [];
-    if (h > 0) parts.push(`${h} 小時`);
-    if (m > 0) parts.push(`${m} 分鐘`);
-    if (parts.length === 0 && s >= 0) parts.push(`${s} 秒`);
+    if (h > 0) parts.push(`${h} hour${h > 1 ? 's' : ''}`);
+    if (m > 0) parts.push(`${m} minute${m > 1 ? 's' : ''}`);
+    if (parts.length === 0 && s >= 0) parts.push(`${s} second${s > 1 ? 's' : ''}`);
     return parts.join(' ');
 };
 
 const formatDate = d3.timeFormat("%Y-%m-%d, %A"); // e.g., "2025-09-29, Monday"
 
 
-/* --- 2. 核心資料轉換 (Option A) --- */
+/* --- 2. Core Data Transformation (Option A) --- */
 
 /**
- * 將 "寬格式" CSV 資料轉換為 "長格式" 以便 D3 使用
- * @param {Array} rawData - 從 d3.csv() 載入的原始資料
- * @returns {Array} - 處理過的每日資料陣列
+ * Convert "wide format" CSV data to "long format" for D3
+ * @param {Array} rawData - Raw data loaded from d3.csv()
+ * @returns {Array} - Processed daily data array
  */
 async function transformData(rawData) {
-    // 1. 取得所有日期的欄位名稱
-    // 排除 'App name', 'Device', 和 'Total Usage (seconds)'
+    // 1. Get all date column names
+    // Exclude 'App name', 'Device', and 'Total Usage (seconds)'
     const dateColumns = rawData.columns.filter(col => 
         col !== "App name" && col !== "Device" && col !== "Total Usage (seconds)"
     );
 
-    // 2. 建立一個 Map 來匯總每日資料
+    // 2. Create a Map to aggregate daily data
     const dailyDataMap = new Map();
 
-    // 3. 遍歷所有 App (每一列)
+    // 3. Iterate through all apps (each row)
     rawData.forEach(appRow => {
         const appName = appRow["App name"];
         
-        // 4. 遍歷所有日期 (每一欄)
+        // 4. Iterate through all dates (each column)
         dateColumns.forEach(dateStr => {
             const usageSeconds = parseInt(appRow[dateStr] || 0, 10);
 
-            // 如果當天沒有這筆資料，先初始化
+            // Initialize if no data for this date
             if (!dailyDataMap.has(dateStr)) {
                 dailyDataMap.set(dateStr, {
                     dateString: dateStr,
@@ -89,11 +89,11 @@ async function transformData(rawData) {
                 });
             }
 
-            // 取得該日的資料並更新
+            // Get the day's data and update
             const dayData = dailyDataMap.get(dateStr);
             dayData.totalUsageSeconds += usageSeconds;
 
-            // 只在有使用時才加入 App 列表，避免列表過長
+            // Only add to app list if usage > 0 to avoid overly long lists
             if (usageSeconds > 0) {
                 dayData.apps.push({
                     name: appName,
@@ -103,10 +103,10 @@ async function transformData(rawData) {
         });
     });
 
-    // 5. 將 Map 轉換為陣列，並計算 d3.js 需要的屬性
+    // 5. Convert Map to array and calculate properties needed by d3.js
     let processedData = Array.from(dailyDataMap.values());
 
-    // 6. 解析日期、排序、並計算 'dayOfWeek' 和 'weekNumber'
+    // 6. Parse dates, sort, and calculate 'dayOfWeek' and 'weekNumber'
     const parseDate = d3.timeParse("%B %d, %Y"); // e.g., "September 29, 2025"
     
     let processedDataWithNulls = processedData.map(d => {
@@ -114,7 +114,7 @@ async function transformData(rawData) {
         const dateObj = parseDate(cleanedDateString);
 
         if (!dateObj) {
-            console.warn(`跳過無法解析的日期欄位: ${d.dateString}`);
+            console.warn(`Skipping unparseable date column: ${d.dateString}`);
             return null; 
         }
         const dayOfWeek = (dateObj.getDay() + 6) % 7; 
@@ -127,27 +127,27 @@ async function transformData(rawData) {
         };
     });
 
-    // (步驟 2: Filter - 移除 null)
+    // (Step 2: Filter - remove null)
     processedData = processedDataWithNulls.filter(d => d !== null);
 
-    // (步驟 3: Sort - *** 必須在 filter 之後 ***)
-    //          這樣才能確保 processedData[0] 是有效的日期
+    // (Step 3: Sort - *** must be after filter ***)
+    //          This ensures processedData[0] is a valid date
     processedData.sort((a, b) => a.dateObj - b.dateObj);
 
-    // (步驟 4: 按照規格書限制資料範圍 - 只保留到 November 4, 2025)
+    // (Step 4: Limit data range per specification - keep only until November 4, 2025)
     const endDate = parseDate("November 4, 2025");
     processedData = processedData.filter(d => d.dateObj <= endDate);
 
-    // 5. 計算 weekNumber 和 dayIndex - *** 必須在 sort 和 filter 之後 ***
-    const startDate = processedData[0].dateObj; // 現在這裡是安全的
+    // 5. Calculate weekNumber and dayIndex - *** must be after sort and filter ***
+    const startDate = processedData[0].dateObj; // Safe now
 
     processedData.forEach((d, index) => {
-        // 計算週數
+        // Calculate week number
         const dayDiff = d3.timeDay.count(startDate, d.dateObj);
-        d.weekNumber = Math.floor(dayDiff / 7); // 0 = 第一週, 1 = 第二週...
+        d.weekNumber = Math.floor(dayDiff / 7); // 0 = week 1, 1 = week 2...
         
-        // 儲存索引，確保 Arc 和 Dot 使用相同的索引系統
-        d.dayIndex = index; // 0 = 第一天, 1 = 第二天, ...
+        // Store index to ensure Arc and Dot use the same index system
+        d.dayIndex = index; // 0 = day 1, 1 = day 2, ...
     });
 
     console.log("Processed Data:", processedData);
@@ -155,11 +155,11 @@ async function transformData(rawData) {
 }
 
 /**
- * 根據每日資料，在 d3.arc 區塊內生成隨機分佈的點。
- * @param {Array} dayData - 處理過的 38 天資料
- * @param {d3.ScaleLinear} radiusScale - D3 半徑比例尺
- * @param {d3.ScaleQuantize} colorScale - D3 顏色比例尺
- * @returns {Array} - 一個包含所有點 (e.g., 38*50=1900 個) 的扁平陣列
+ * Based on daily data, generate randomly distributed dots within d3.arc blocks.
+ * @param {Array} dayData - Processed 38 days of data
+ * @param {d3.ScaleLinear} radiusScale - D3 radius scale
+ * @param {d3.ScaleQuantize} colorScale - D3 color scale
+ * @returns {Array} - A flat array containing all dots (e.g., 38*50=1900)
  */
 function generateDotData(dayData, radiusScale, colorScale) {
     const allDots = [];
@@ -179,10 +179,10 @@ function generateDotData(dayData, radiusScale, colorScale) {
     });
 
     dayData.forEach((day) => {
-        // 使用資料物件中儲存的 dayIndex，確保與 Arc 一致
+        // Use dayIndex stored in data object to ensure consistency with Arc
         const i = day.dayIndex;
 
-        // 取得該日的邊界
+        // Get the day's boundaries
 
         const innerR = radiusScale(i);
         const outerR = radiusScale(i) + DAY_SEGMENT_HEIGHT;
@@ -191,20 +191,20 @@ function generateDotData(dayData, radiusScale, colorScale) {
         
         const dayColor = colorScale(day.totalUsageSeconds);
 
-        // 為這一天生成 DOTS_PER_DAY 個點
+        // Generate DOTS_PER_DAY dots for this day
         for (let j = 0; j < DOTS_PER_DAY; j++) {
             
-            // 1. 取得隨機角度
+            // 1. Get random angle
             const randomAngle = Math.random() * (endAngle - startAngle) + startAngle;
             
-            // 2. 取得隨機半徑
-            // 關鍵：使用 Math.sqrt(Math.random()) 
-            // 確保點在「面積」上均勻分佈，而不是在「半徑」上
+            // 2. Get random radius
+            // Key: Use Math.sqrt(Math.random()) 
+            // to ensure dots are uniformly distributed in "area", not in "radius"
             const randomT = Math.sqrt(Math.random());
             const randomRadius = innerR + randomT * (outerR - innerR);
             
-            // 3. 將極座標 (r, angle) 轉換為笛卡爾座標 (x, y)
-            // D3/SVG 的角度 0 是 3 點鐘方向，-PI/2 是 12 點鐘方向
+            // 3. Convert polar coordinates (r, angle) to Cartesian (x, y)
+            // D3/SVG angle 0 is 3 o'clock direction, -PI/2 is 12 o'clock direction
             const x = randomRadius * Math.cos(randomAngle);
             const y = randomRadius * Math.sin(randomAngle);
 
@@ -212,7 +212,7 @@ function generateDotData(dayData, radiusScale, colorScale) {
                 x: x,
                 y: y,
                 color: dayColor,
-                dayIndex: i // 儲存天的索引，用於動畫延遲
+                dayIndex: i // Store day index for animation delay
             });
         }
     });
@@ -222,65 +222,65 @@ function generateDotData(dayData, radiusScale, colorScale) {
 }
 
 
-/* --- 3. 繪製視覺化 (Render Function) --- */
+/* --- 3. Render Visualization (Render Function) --- */
 
 /**
- * 繪製主螺旋圖
- * @param {Array} data - 處理過的每日資料
- * @param {d3.Selection} svg - D3 的 SVG 選擇器
+ * Render main spiral chart
+ * @param {Array} data - Processed daily data
+ * @param {d3.Selection} svg - D3 SVG selector
  */
 function renderSpiral(data, svg) {
     
-    // 取得容器的當前寬高，以實現響應式
+    // Get current container width/height for responsive design
     const containerRect = visContainer.node().getBoundingClientRect();
     const width = containerRect.width - margin.left - margin.right;
     const height = containerRect.height - margin.top - margin.bottom;
     const radius = Math.min(width, height) / 2;
 
-    // 將 SVG 中心點移到畫布中央
+    // Move SVG center point to canvas center
     const g = svg
-        .attr("viewBox", `0 0 ${containerRect.width} ${containerRect.height}`) // 響應式關鍵
-        .html(null) // 清空舊圖表 (用於重繪)
+        .attr("viewBox", `0 0 ${containerRect.width} ${containerRect.height}`) // Responsive key
+        .html(null) // Clear old chart (for redraw)
         .append("g")
         .attr("transform", `translate(${containerRect.width / 2}, ${containerRect.height / 2})`);
 
-    // --- 設定比例尺 (Scales) ---
+    // --- Set up scales (Scales) ---
 
-    // 1. 半徑 (Radius) 比例尺 (邏輯不變)
+    // 1. Radius (Radius) scale (logic unchanged)
     const innerRadiusStart = 40;
     const maxDayIndex = data.length - 1;
     const radiusScale = d3.scaleLinear()
         .domain([0, maxDayIndex])
         .range([innerRadiusStart, radius - DAY_SEGMENT_HEIGHT]);
 
-    // 2. 顏色 (Color) 比例尺 (邏輯不變)
+    // 2. Color (Color) scale (logic unchanged)
     const maxUsage = d3.max(data, d => d.totalUsageSeconds);
     colorScale.domain([0, maxUsage]);
     
-    // --- [ 新增 ] 產生點資料 ---
+    // --- [ New ] Generate dot data ---
     const dotData = generateDotData(data, radiusScale, colorScale);
 
-    // --- 繪製 Arc (弧形) - [ 已修改 ] ---
-    // 這些 <path> 現在是「隱形」的互動層
+    // --- Render Arc (arcs) - [ Modified ] ---
+    // These <path> are now "invisible" interactive layers
 
-    // 1. 建立 Arc 產生器 (邏輯不變)
-    // 使用資料物件中的 dayIndex，確保與 Dot 繪製一致
+    // 1. Create Arc generator (logic unchanged)
+    // Use dayIndex from data object to ensure consistency with Dot rendering
     const arcGenerator = d3.arc()
         .innerRadius(d => radiusScale(d.dayIndex))
         .outerRadius(d => radiusScale(d.dayIndex) + DAY_SEGMENT_HEIGHT)
         .startAngle(d => d.dayOfWeek * DAY_ANGLE + MONDAY_OFFSET)
         .endAngle(d => (d.dayOfWeek + 1) * DAY_ANGLE + MONDAY_OFFSET)
-        .cornerRadius(0); // 方案 B (接縫連續)
+        .cornerRadius(0); // continuous seams
 
-    // 2. 資料綁定 (Data Join) - [ 已修改 ]
-    // 不再傳入索引參數，因為 arcGenerator 會從資料物件中讀取 dayIndex
+    // 2. Data binding (Data Join)
+    // No longer pass index parameter since arcGenerator reads dayIndex from data object
     g.selectAll("path.day-segment")
         .data(data)
         .join("path")
-        .attr("class", "day-segment") // style.css 會給它 stroke
-        .attr("d", d => arcGenerator(d)) // 只傳入資料物件
-        .attr("fill", "none") // 設為透明，讓底下的點可見
-        // 互動 (Interactivity) - (邏輯不變)
+        .attr("class", "day-segment") // style.css will style it
+        .attr("d", d => arcGenerator(d)) // Only pass data object
+        .attr("fill", "none") // Set transparent so dots below are visible
+        // Interactivity (Interactivity)
         .on("mouseover", (event, d) => {
             showModal(event, d);
         })
@@ -288,63 +288,63 @@ function renderSpiral(data, svg) {
             hideModal();
         });
 
-    // --- [ 新增 ] 繪製點 (Dots) ---
-    // 這是新的「視覺層」
+    // --- Render dots (Dots) ---
+    // This is the new "visual layer"
     
     g.selectAll("circle.dot")
         .data(dotData)
         .join("circle")
             .attr("class", "dot")
-            // 設定點的位置和樣式
+            // Set dot position and style
             .attr("cx", d => d.x)
             .attr("cy", d => d.y)
             .attr("r", DOT_RADIUS)
             .attr("fill", d => d.color)
-            // 關鍵：讓點「穿透」滑鼠事件，
-            // 這樣滑鼠才能 hover 到底下的 .day-segment 路徑
+            // Key: Let dots "pass through" mouse events,
+            // so mouse can hover over the .day-segment paths below
             .style("pointer-events", "none")
             
-            // [ 新增 ] 動畫效果
-            .style("opacity", 0) // 初始狀態：完全透明
+            // [ New ] Animation effect
+            .style("opacity", 0) // Initial state: fully transparent
         .transition()
-            // 每個點的動畫持續 500ms
+            // Animation duration 500ms per dot
             .duration(500) 
-            // 根據「天」的索引 (dayIndex) 來設定延遲
-            // 這會產生「由內至外」依序填滿的動畫效果
+            // Set delay based on day index (dayIndex)
+            // This creates "fill from inside to outside" animation effect
             .delay(d => d.dayIndex * ANIMATION_DAY_DELAY)
-            .style("opacity", 1); // 最終狀態：完全不透明
+            .style("opacity", 1); // Final state: fully opaque
 
-    // 3. 繪製圖例 (This remains the same)
+    // 3. Render legend (This remains the same)
     renderLegend(colorScale);
 }
 
 
-/* --- 4. 互動輔助函式 (Modal & Legend) --- */
+/* --- 4. Interaction Helper Functions (Modal & Legend) --- */
 
 /**
- * 顯示互動視窗 (Modal)
- * @param {Event} event - D3 的滑鼠事件
- * @param {object} d - 綁定的當日資料
+ * Show interaction modal
+ * @param {Event} event - D3 mouse event
+ * @param {object} d - Bound daily data
  */
 function showModal(event, d) {
     modal.classed("visible", true);
     
-    // 根據滑鼠位置動態定位 Modal
-    // 讓 modal 出現在滑鼠的右下方
+    // Dynamically position modal based on mouse position
+    // Position modal at bottom-right of cursor
     const [x, y] = d3.pointer(event, document.body);
     modal
         .style("left", `${x + 15}px`)
         .style("top", `${y + 15}px`);
 
-    // 填充 Modal 內容
+    // Fill modal content
     modal.select("#modal-date").text(formatDate(d.dateObj));
     modal.select("#modal-total-usage").text(formatTime(d.totalUsageSeconds));
 
-    // 動態生成 App 列表
+    // Dynamically generate app list
     const appList = modal.select("#modal-app-list");
-    appList.html(null); // 清空舊列表
+    appList.html(null); // Clear old list
 
-    d.apps.slice(0, 10).forEach(app => { // 最多顯示前 10 名
+    d.apps.slice(0, 10).forEach(app => { // Show max top 10
         appList.append("div")
             .attr("class", "app-item")
             .html(`
@@ -354,29 +354,29 @@ function showModal(event, d) {
     });
     
     if (d.apps.length > 10) {
-        appList.append("div").style("margin-top", "5px").style("color", "#999").text("...等其他 App");
+        appList.append("div").style("margin-top", "5px").style("color", "#999").text("...and other apps");
     }
 }
 
 /**
- * 隱藏互動視窗 (Modal)
+ * Hide interaction modal
  */
 function hideModal() {
     modal.classed("visible", false);
 }
 
 /**
- * 繪製顏色圖例
- * @param {d3.ScaleQuantize} scale - 使用的顏色比例尺
+ * Render color legend
+ * @param {d3.ScaleQuantize} scale - Color scale used
  */
 function renderLegend(scale) {
-    legendContainer.html("<h4>每日使用時間</h4>"); // 清空並重設標題
+    legendContainer.html("<h4>Daily Usage Time</h4>"); // Clear and reset title
 
-    // Quantize scale (量化) 需要用 .thresholds() 或 .quantiles()
-    // 為了簡單起見，我們直接使用 scale.range() 和 scale.invertExtent()
+    // Quantize scale needs .thresholds() or .quantiles()
+    // For simplicity, we directly use scale.range() and scale.invertExtent()
     
     scale.range().forEach(color => {
-        const extent = scale.invertExtent(color); // 找到這個顏色對應的範圍 [min, max]
+        const extent = scale.invertExtent(color); // Find range [min, max] for this color
         const text = `${formatTime(Math.round(extent[0]))} - ${formatTime(Math.round(extent[1]))}`;
 
         const item = legendContainer.append("div")
@@ -392,47 +392,47 @@ function renderLegend(scale) {
 }
 
 
-/* --- 5. 執行主程式 (Main Execution) --- */
+/* --- 5. Main Program Execution --- */
 
 /**
- * 主執行函式 (async)
+ * Main execution function (async)
  */
 async function main() {
     try {
-        // 1. 載入資料
+        // 1. Load data
         const rawData = await d3.csv("app_usage.csv");
         
-        // 2. 轉換資料 (Option A)
+        // 2. Transform data (Option A)
         const processedData = await transformData(rawData);
         
-        console.log("--- 檢查轉換後的資料 (processedData) ---");
+        console.log("--- Check transformed data (processedData) ---");
         console.log(processedData);
 
         console.log("Total days:", processedData.length);
         console.log("First day:", processedData[0].dateString, processedData[0].dayOfWeek);
         console.log("Last day:", processedData[processedData.length-1].dateString, processedData[processedData.length-1].dayOfWeek);
 
-        // 3. 繪製圖表
-        // 建立 SVG 畫布
+        // 3. Render chart
+        // Create SVG canvas
         const svg = visContainer.append("svg");
         
         renderSpiral(processedData, svg);
 
-        // 4. (可選) 監聽視窗大小變動，重新繪製
-        // 為了效能，使用 debounce (簡易版)
+        // 4. (Optional) Listen for window resize, redraw
+        // For performance, use debounce (simple version)
         let resizeTimer;
         window.addEventListener("resize", () => {
             clearTimeout(resizeTimer);
             resizeTimer = setTimeout(() => {
-                renderSpiral(processedData, svg); // 重繪
+                renderSpiral(processedData, svg); // Redraw
             }, 200);
         });
 
     } catch (error) {
-        console.error("載入或繪製圖表時發生錯誤:", error);
-        visContainer.text("資料載入失敗，請檢查 app_usage.csv 檔案是否存在，或檢查瀏覽器主控台。");
+        console.error("Error loading or rendering chart:", error);
+        visContainer.text("Data loading failed. Please check if app_usage.csv exists, or check browser console for errors.");
     }
 }
 
-// 啟動！
+// Let's go!
 main();

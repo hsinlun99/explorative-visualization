@@ -1,4 +1,4 @@
-/* --- 基本設定 --- */
+/* --- Basic Settings --- */
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     background-color: #f4f4f9;
@@ -23,39 +23,39 @@ main {
     display: flex;
     justify-content: center;
     align-items: center;
-    position: relative; /* 為了 modal 和 legend 的絕對定位 */
+    position: relative; /* For absolute positioning of modal and legend */
 }
 
-/* --- D3 視覺化容器 --- */
+/* --- D3 Visualization Container --- */
 #vis-container {
     width: 100%;
     max-width: 700px;
-    height: 700px; /* 給定一個初始高度 */
-    position: relative; /* 為了 SVG 的響應式 */
+    height: 700px; /* Initial height */
+    position: relative; /* For responsive SVG */
 }
 
-/* 讓 SVG 響應式 */
+/* Make SVG responsive */
 svg {
     width: 100%;
     height: 100%;
     overflow: visible;
 }
 
-/* D3 繪製的每日區塊路徑 */
+/* Daily block paths rendered by D3 */
 .day-segment {
     cursor: pointer;
-    stroke: #f4f4f9; /* 區塊間的間隔顏色，與背景相同 */
+    stroke: #f4f4f9; /* Gap color between blocks, same as background */
     stroke-width: 2px;
     transition: filter 0.2s ease;
 }
 
 .day-segment:hover {
-    filter: brightness(1.1); /* Hover 時變亮 */
+    filter: brightness(1.1); /* Brighten on hover */
 }
 
-/* --- 互動視窗 (Modal) --- */
+/* --- Interaction Modal --- */
 #modal {
-    display: none; /* 預設隱藏 */
+    display: none; /* Hidden by default */
     position: absolute;
     min-width: 250px;
     background: rgba(40, 40, 40, 0.95);
@@ -63,13 +63,13 @@ svg {
     border-radius: 8px;
     padding: 15px;
     box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-    pointer-events: none; /* 避免 modal 擋住滑鼠事件 */
+    pointer-events: none; /* Avoid blocking mouse events */
     z-index: 10;
     font-size: 14px;
 }
 
 #modal.visible {
-    display: block; /* JS 會切換這個 class */
+    display: block; /* JS toggles this class */
 }
 
 #modal-date {
@@ -81,7 +81,7 @@ svg {
 
 #modal-total-usage {
     font-weight: bold;
-    color: #4CAF50; /* 亮色顯示總時間 */
+    color: #4CAF50; /* Bright color for total time */
 }
 
 #modal-app-list {
@@ -103,7 +103,7 @@ svg {
 }
 
 
-/* --- 圖例 (Legend) --- */
+/* --- Legend --- */
 #legend {
     position: absolute;
     bottom: 20px;
