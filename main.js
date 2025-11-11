@@ -15,6 +15,14 @@ const WEEK_SEGMENTS = 7; // 一週 7 天
 const DAY_ANGLE = (2 * Math.PI) / WEEK_SEGMENTS; // 每一天的角度
 const MONDAY_OFFSET = -Math.PI / 2; // 將星期一 (12點鐘方向) 設為起始點
 const DAY_SEGMENT_HEIGHT = 25; // 每天區塊的「厚度」
+const DOTS_PER_DAY = 100; // 每個區塊生成的點數。警告：此數字 > 100 可能會導致顯著的效能下降 (卡頓)。
+
+// 每個點的半徑 (像素)
+const DOT_RADIUS = 3;
+
+// 動畫設定：每天的動畫延遲 (毫秒)
+// 總動畫時長約為：ANIMATION_DAY_DELAY * (總天數)
+const ANIMATION_DAY_DELAY = 40; // 40ms * 38 天 ≈ 1.5 秒動畫
 
 // 顏色比例尺 (Quantize Scale): 將使用時間 (連續) 映射到 5 個離散的顏色
 const colorScale = d3.scaleQuantize()
@@ -126,17 +134,69 @@ async function transformData(rawData) {
     //          這樣才能確保 processedData[0] 是有效的日期
     processedData.sort((a, b) => a.dateObj - b.dateObj);
 
-    // (步驟 4: 計算 weekNumber - *** 必須在 sort 之後 ***)
-    // const startDate = processedData[0].dateObj; // 現在這裡是安全的
-    
-    // processedData.forEach(d => {
-    //     // d3.timeDay.count 會計算相差多少天
-    //     const dayDiff = d3.timeDay.count(startDate, d.dateObj);
-    //     d.weekNumber = Math.floor(dayDiff / 7); // 0 = 第一週, 1 = 第二週...
-    // });
+    // (步驟 4: 按照規格書限制資料範圍 - 只保留到 November 4, 2025)
+    const endDate = parseDate("November 4, 2025");
+    processedData = processedData.filter(d => d.dateObj <= endDate);
 
-    // console.log("Processed Data:", processedData);
+    // 5. 計算 weekNumber - *** 必須在 sort 和 filter 之後 ***
+    const startDate = processedData[0].dateObj; // 現在這裡是安全的
+    
+    processedData.forEach(d => {
+        // d3.timeDay.count 會計算相差多少天
+        const dayDiff = d3.timeDay.count(startDate, d.dateObj);
+        d.weekNumber = Math.floor(dayDiff / 7); // 0 = 第一週, 1 = 第二週...
+    });
+
+    console.log("Processed Data:", processedData);
     return processedData;
+}
+
+/**
+ * 根據每日資料，在 d3.arc 區塊內生成隨機分佈的點。
+ * @param {Array} dayData - 處理過的 38 天資料
+ * @param {d3.ScaleLinear} radiusScale - D3 半徑比例尺
+ * @param {d3.ScaleQuantize} colorScale - D3 顏色比例尺
+ * @returns {Array} - 一個包含所有點 (e.g., 38*50=1900 個) 的扁平陣列
+ */
+function generateDotData(dayData, radiusScale, colorScale) {
+    const allDots = [];
+
+    dayData.forEach((day, i) => {
+        // 取得該日的邊界
+        const innerR = radiusScale(i);
+        const outerR = radiusScale(i) + DAY_SEGMENT_HEIGHT;
+        const startAngle = day.dayOfWeek * DAY_ANGLE + MONDAY_OFFSET;
+        const endAngle = (day.dayOfWeek + 1) * DAY_ANGLE + MONDAY_OFFSET;
+        
+        const dayColor = colorScale(day.totalUsageSeconds);
+
+        // 為這一天生成 DOTS_PER_DAY 個點
+        for (let j = 0; j < DOTS_PER_DAY; j++) {
+            
+            // 1. 取得隨機角度
+            const randomAngle = Math.random() * (endAngle - startAngle) + startAngle;
+            
+            // 2. 取得隨機半徑
+            // 關鍵：使用 Math.sqrt(Math.random()) 
+            // 確保點在「面積」上均勻分佈，而不是在「半徑」上
+            const randomT = Math.sqrt(Math.random());
+            const randomRadius = innerR + randomT * (outerR - innerR);
+            
+            // 3. 將極座標 (r, angle) 轉換為笛卡爾座標 (x, y)
+            // D3/SVG 的角度 0 是 3 點鐘方向，-PI/2 是 12 點鐘方向
+            const x = randomRadius * Math.cos(randomAngle);
+            const y = randomRadius * Math.sin(randomAngle);
+
+            allDots.push({
+                x: x,
+                y: y,
+                color: dayColor,
+                dayIndex: i // 儲存天的索引，用於動畫延遲
+            });
+        }
+    });
+
+    return allDots;
 }
 
 
@@ -164,58 +224,71 @@ function renderSpiral(data, svg) {
 
     // --- 設定比例尺 (Scales) ---
 
-    // 1. 半徑 (Radius) 比例尺
-    // --- NEW LOGIC ---
-    // The radius now depends on the total number of days (data.length),
-    // not the number of weeks. This creates a continuous spiral.
-    const innerRadiusStart = 40; // Spiral starts at 40px from center
-    const maxDayIndex = data.length - 1; // e.g., 37 (for 38 days)
-
-    // We map the day index [0, 37] to a radius range.
-    // The range ends at 'radius - DAY_SEGMENT_HEIGHT', which is the
-    // *inner radius* of the *last* day segment.
+    // 1. 半徑 (Radius) 比例尺 (邏輯不變)
+    const innerRadiusStart = 40;
+    const maxDayIndex = data.length - 1;
     const radiusScale = d3.scaleLinear()
         .domain([0, maxDayIndex])
         .range([innerRadiusStart, radius - DAY_SEGMENT_HEIGHT]);
 
-    // 2. 顏色 (Color) 比例尺 (This remains the same)
+    // 2. 顏色 (Color) 比例尺 (邏輯不變)
     const maxUsage = d3.max(data, d => d.totalUsageSeconds);
     colorScale.domain([0, maxUsage]);
+    
+    // --- [ 新增 ] 產生點資料 ---
+    const dotData = generateDotData(data, radiusScale, colorScale);
 
-    // --- 繪製 Arc (弧形) ---
+    // --- 繪製 Arc (弧形) - [ 已修改 ] ---
+    // 這些 <path> 現在是「隱形」的互動層
 
-    // 1. 建立 Arc 產生器
+    // 1. 建立 Arc 產生器 (邏輯不變)
     const arcGenerator = d3.arc()
-        // --- MODIFIED ---
-        // The radius is now calculated using the index 'i' of the data array,
-        // which represents the day number (0 to 37).
-        // This ensures each day is slightly further out than the last.
-        .innerRadius((d, i) => radiusScale(i)) 
-        // The outer radius is simply the inner radius + the segment height.
-        // We have removed the old 'WEEK_PADDING' logic to make the spiral continuous.
-        .outerRadius((d, i) => radiusScale(i) + DAY_SEGMENT_HEIGHT) 
-        // --- (Angle logic remains the same) ---
+        .innerRadius((d, i) => radiusScale(i))
+        .outerRadius((d, i) => radiusScale(i) + DAY_SEGMENT_HEIGHT)
         .startAngle(d => d.dayOfWeek * DAY_ANGLE + MONDAY_OFFSET)
         .endAngle(d => (d.dayOfWeek + 1) * DAY_ANGLE + MONDAY_OFFSET)
-        .cornerRadius(0); // Apply a slight corner radius
+        .cornerRadius(0); // 方案 B (接縫連續)
 
-    // 2. 資料綁定 (Data Join)
+    // 2. 資料綁定 (Data Join) - [ 已修改 ]
     g.selectAll("path.day-segment")
         .data(data)
         .join("path")
-        .attr("class", "day-segment")
-        // --- MODIFIED ---
-        // The arc generator now needs both 'd' (data) and 'i' (index)
-        // to calculate the radius, so we pass 'i' to it.
-        .attr("d", (d, i) => arcGenerator(d, i)) 
-        .attr("fill", d => colorScale(d.totalUsageSeconds))
-        // --- (Interactivity remains the same) ---
+        .attr("class", "day-segment") // style.css 會給它 stroke
+        .attr("d", (d, i) => arcGenerator(d, i))
+        .attr("fill", "none") // [ 修改 ] 設為透明！
+        // 互動 (Interactivity) - (邏輯不變)
         .on("mouseover", (event, d) => {
             showModal(event, d);
         })
         .on("mouseout", () => {
             hideModal();
         });
+
+    // --- [ 新增 ] 繪製點 (Dots) ---
+    // 這是新的「視覺層」
+    
+    g.selectAll("circle.dot")
+        .data(dotData)
+        .join("circle")
+            .attr("class", "dot")
+            // 設定點的位置和樣式
+            .attr("cx", d => d.x)
+            .attr("cy", d => d.y)
+            .attr("r", DOT_RADIUS)
+            .attr("fill", d => d.color)
+            // 關鍵：讓點「穿透」滑鼠事件，
+            // 這樣滑鼠才能 hover 到底下的 .day-segment 路徑
+            .style("pointer-events", "none")
+            
+            // [ 新增 ] 動畫效果
+            .style("opacity", 0) // 初始狀態：完全透明
+        .transition()
+            // 每個點的動畫持續 500ms
+            .duration(500) 
+            // 根據「天」的索引 (dayIndex) 來設定延遲
+            // 這會產生「由內至外」依序填滿的動畫效果
+            .delay(d => d.dayIndex * ANIMATION_DAY_DELAY)
+            .style("opacity", 1); // 最終狀態：完全不透明
 
     // 3. 繪製圖例 (This remains the same)
     renderLegend(colorScale);
