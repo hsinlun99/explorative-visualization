@@ -10,14 +10,10 @@
     
     <header>
         <h1>Mobile Usage: Day After Day</h1>
-        <p>A d3.js visualization project</p>
     </header>
 
     <main>
         <div id="vis-container"></div>
-        <div id="timeline-container">
-            <svg id="timeline-svg"></svg>
-        </div>
     </main>
 
     <div id="legend">
@@ -31,10 +27,14 @@
         </div>
     </div>
 
-    <div id="timeline-modal">
-        <h3 id="timeline-modal-date"></h3>
-        <p>Total Usage: <span id="timeline-modal-total-usage"></span></p>
-        <div id="timeline-modal-app-list">
+    <div id="timeline-container">
+        <svg id="timeline-svg"></svg>
+
+        <div id="timeline-modal">
+            <h3 id="timeline-modal-date"></h3>
+            <p>Total Usage: <span id="timeline-modal-total-usage"></span></p>
+            <div id="timeline-modal-app-list">
+            </div>
         </div>
     </div>
 

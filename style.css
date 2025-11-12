@@ -1,7 +1,7 @@
 /* --- Basic Settings --- */
 html, body {
-    height: 100vh; /* [關鍵] 佔滿視窗高度 */
-    overflow: hidden; /* [關鍵] 移除瀏覽器卷軸 */
+    height: 100vh;
+    overflow: hidden;
 }
 
 body {
@@ -12,33 +12,35 @@ body {
     padding: 0;
     display: flex;
     flex-direction: column;
-    align-items: center;
     min-height: 100vh;
+    position: relative; /* [關鍵] 讓 timeline 可以
+                           相對於 body 絕對定位 */
 }
 
 header {
     width: 100%;
     text-align: center;
     padding: 20px 0;
-    flex-shrink: 0; /* 防止 header 被壓縮 */
+    flex-shrink: 0;
+    z-index: 10;
+    position: relative;
 }
 
-/* [修改] Main content area uses Flexbox */
+/* [修改] Main content area (僅包含螺旋圖) */
 main {
     width: 100%;
-    flex-grow: 1; /* [關鍵] 填滿 body 剩餘的高度 */
+    flex-grow: 1; 
     display: flex;
-    flex-direction: row; /* 讓 spiral 和 timeline 並排 */
-    overflow: hidden; /* 確保內容不溢出 */
-    position: relative; /* For absolute positioning of modal and legend */
+    overflow: hidden; 
+    position: relative; 
 }
 
 /* --- D3 Visualization Container --- */
 #vis-container {
-    flex: 1; /* [關鍵] 佔據大部分空間 */
+    flex: 1; /* 佔據 main 的所有空間 */
     height: 100%;
     position: relative;
-    min-width: 0; /* Flexbox 修正 */
+    min-width: 0; 
 }
 
 /* Make SVG responsive */
@@ -48,12 +50,12 @@ svg {
     overflow: visible;
 }
 
-/* [修改] Daily block paths rendered by D3 */
+/* Daily block paths */
 .day-segment {
     cursor: pointer;
-    stroke: #f4f4f9; /* Gap color */
+    stroke: #f4f4f9; 
     stroke-width: 2px;
-    transition: filter 0.2s ease, opacity 0.3s ease; /* Added opacity transition */
+    transition: filter 0.2s ease, opacity 0.3s ease;
     pointer-events: fill;
 }
 
@@ -61,9 +63,9 @@ svg {
     filter: brightness(1.1);
 }
 
-/* [新增] Interaction classes for timeline hover */
+/* Interaction classes */
 .day-segment.highlighted {
-    stroke: #00a688; /* Use a theme color */
+    stroke: #00a688;
     stroke-width: 3px;
     filter: brightness(1.1);
 }
@@ -72,16 +74,19 @@ svg {
 }
 
 
-/* --- Timeline (New) --- */
+/* --- Timeline (New Layout) --- */
 #timeline-container {
-    width: 90px;
-    height: 100%;
-    flex-shrink: 0;
-    background: #e9e9ee;
-    border-left: 1px solid #ddd;
-    position: relative; /* For absolute positioning of modal and arrows */
+    /* [關鍵] 脫離 main，相對於 body 絕對定位 */
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    right: 30px; /* 離右側 30px */
+    
+    height: 90vh; /* [關鍵] 90% 視窗高度 */
+    width: 120px; /* [修改] 增加寬度以容納日期標籤 */
+    
     overflow: hidden; /* [關鍵] 裁剪 timeline 內容 */
-    box-sizing: border-box;
+    z-index: 15;
 }
 
 #timeline-svg {
@@ -89,7 +94,7 @@ svg {
     height: 100%;
 }
 
-/* [新增] Draggable content group */
+/* Draggable content group */
 #timeline-content-group {
     cursor: grab;
 }
@@ -97,17 +102,17 @@ svg {
     cursor: grabbing;
 }
 
-/* [新增] Timeline axis line */
+/* Timeline axis line */
 .timeline-axis-line {
     stroke: #ccc;
     stroke-width: 2px;
 }
 
-/* [新增] Timeline date dots */
+/* Timeline date dots */
 .timeline-dot {
     fill: #aaa;
     stroke: #e9e9ee;
-    stroke-width: 2px;
+    stroke-width: 8px;
     cursor: pointer;
     transition: fill 0.2s ease;
 }
@@ -115,7 +120,19 @@ svg {
     fill: #00a688;
 }
 
-/* [新增] Timeline drag arrows */
+/* [新增] Timeline date labels */
+.timeline-label {
+    font-size: 16px;
+    fill: #555;
+    font-family: monospace; /* Use monospace for consistent width */
+    pointer-events: none; /* [關鍵] 讓滑鼠事件穿透 */
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+/* Timeline drag arrows */
 .timeline-arrow {
     position: absolute;
     left: 50%;
@@ -123,9 +140,9 @@ svg {
     width: 24px;
     height: 24px;
     fill: rgba(0, 0, 0, 0.3);
-    pointer-events: none; /* [關鍵] 讓滑鼠事件穿透 */
+    pointer-events: none; 
     z-index: 20;
-    display: none; /* Default hidden */
+    display: none; 
 }
 #timeline-arrow-up {
     top: 5px;
@@ -154,9 +171,10 @@ svg {
     display: block;
 }
 
-/* --- Timeline Modal (New) --- */
+/* --- Timeline Modal (New Position) --- */
 #timeline-modal {
     display: none;
+    /* [修改] Modal 現在相對於 #timeline-container 定位 */
     position: absolute;
     min-width: 250px;
     background: rgba(40, 40, 40, 0.95);
@@ -165,13 +183,13 @@ svg {
     padding: 15px;
     box-shadow: 0 4px 15px rgba(0,0,0,0.2);
     pointer-events: none;
-    z-index: 10;
+    z-index: 30; /* 確保高於 timeline-container */
     font-size: 14px;
     
-    /* [關鍵] Positioned to the left of its parent (#timeline-container) */
+    /* [關鍵] 定位在 timeline-container 的左側 */
     right: 100%;
     top: 20px;
-    margin-right: 10px;
+    margin-right: 10px; /* 與 container 的間距 */
 }
 
 #timeline-modal.visible {
@@ -185,18 +203,15 @@ svg {
     border-bottom: 1px solid #666;
     padding-bottom: 5px;
 }
-
 #modal-total-usage, #timeline-modal-total-usage {
     font-weight: bold;
     color: #4CAF50;
 }
-
 #modal-app-list, #timeline-modal-app-list {
     margin-top: 10px;
     max-height: 200px;
     overflow-y: auto;
 }
-
 .app-item {
     display: flex;
     justify-content: space-between;
@@ -226,14 +241,12 @@ svg {
     margin: 0 0 8px 0;
     font-size: 14px;
 }
-
 .legend-item {
     display: flex;
     align-items: center;
     font-size: 12px;
     margin-bottom: 4px;
 }
-
 .legend-color-box {
     width: 15px;
     height: 15px;
