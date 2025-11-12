@@ -1,4 +1,9 @@
 /* --- Basic Settings --- */
+html, body {
+    height: 100vh; /* [關鍵] 佔滿視窗高度 */
+    overflow: hidden; /* [關鍵] 移除瀏覽器卷軸 */
+}
+
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     background-color: #f4f4f9;
@@ -15,23 +20,25 @@ header {
     width: 100%;
     text-align: center;
     padding: 20px 0;
+    flex-shrink: 0; /* 防止 header 被壓縮 */
 }
 
+/* [修改] Main content area uses Flexbox */
 main {
     width: 100%;
-    flex-grow: 1;
+    flex-grow: 1; /* [關鍵] 填滿 body 剩餘的高度 */
     display: flex;
-    justify-content: center;
-    align-items: center;
+    flex-direction: row; /* 讓 spiral 和 timeline 並排 */
+    overflow: hidden; /* 確保內容不溢出 */
     position: relative; /* For absolute positioning of modal and legend */
 }
 
 /* --- D3 Visualization Container --- */
 #vis-container {
-    width: 100%;
-    max-width: 700px;
-    height: 700px; /* Initial height */
-    position: relative; /* For responsive SVG */
+    flex: 1; /* [關鍵] 佔據大部分空間 */
+    height: 100%;
+    position: relative;
+    min-width: 0; /* Flexbox 修正 */
 }
 
 /* Make SVG responsive */
@@ -41,22 +48,96 @@ svg {
     overflow: visible;
 }
 
-/* Daily block paths rendered by D3 */
+/* [修改] Daily block paths rendered by D3 */
 .day-segment {
     cursor: pointer;
-    stroke: #f4f4f9; /* Gap color between blocks, same as background */
+    stroke: #f4f4f9; /* Gap color */
     stroke-width: 2px;
-    transition: filter 0.2s ease;
+    transition: filter 0.2s ease, opacity 0.3s ease; /* Added opacity transition */
     pointer-events: fill;
 }
 
 .day-segment:hover {
-    filter: brightness(1.1); /* Brighten on hover */
+    filter: brightness(1.1);
 }
 
-/* --- Interaction Modal --- */
+/* [新增] Interaction classes for timeline hover */
+.day-segment.highlighted {
+    stroke: #00a688; /* Use a theme color */
+    stroke-width: 3px;
+    filter: brightness(1.1);
+}
+.day-segment.dimmed {
+    opacity: 0.2;
+}
+
+
+/* --- Timeline (New) --- */
+#timeline-container {
+    width: 90px;
+    height: 100%;
+    flex-shrink: 0;
+    background: #e9e9ee;
+    border-left: 1px solid #ddd;
+    position: relative; /* For absolute positioning of modal and arrows */
+    overflow: hidden; /* [關鍵] 裁剪 timeline 內容 */
+    box-sizing: border-box;
+}
+
+#timeline-svg {
+    width: 100%;
+    height: 100%;
+}
+
+/* [新增] Draggable content group */
+#timeline-content-group {
+    cursor: grab;
+}
+#timeline-content-group.grabbing {
+    cursor: grabbing;
+}
+
+/* [新增] Timeline axis line */
+.timeline-axis-line {
+    stroke: #ccc;
+    stroke-width: 2px;
+}
+
+/* [新增] Timeline date dots */
+.timeline-dot {
+    fill: #aaa;
+    stroke: #e9e9ee;
+    stroke-width: 2px;
+    cursor: pointer;
+    transition: fill 0.2s ease;
+}
+.timeline-dot:hover {
+    fill: #00a688;
+}
+
+/* [新增] Timeline drag arrows */
+.timeline-arrow {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 24px;
+    height: 24px;
+    fill: rgba(0, 0, 0, 0.3);
+    pointer-events: none; /* [關鍵] 讓滑鼠事件穿透 */
+    z-index: 20;
+    display: none; /* Default hidden */
+}
+#timeline-arrow-up {
+    top: 5px;
+}
+#timeline-arrow-down {
+    bottom: 5px;
+}
+
+
+/* --- Interaction Modal (Original) --- */
 #modal {
-    display: none; /* Hidden by default */
+    display: none;
     position: absolute;
     min-width: 250px;
     background: rgba(40, 40, 40, 0.95);
@@ -64,28 +145,53 @@ svg {
     border-radius: 8px;
     padding: 15px;
     box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-    pointer-events: none; /* Avoid blocking mouse events */
+    pointer-events: none;
     z-index: 10;
     font-size: 14px;
 }
 
 #modal.visible {
-    display: block; /* JS toggles this class */
+    display: block;
 }
 
-#modal-date {
+/* --- Timeline Modal (New) --- */
+#timeline-modal {
+    display: none;
+    position: absolute;
+    min-width: 250px;
+    background: rgba(40, 40, 40, 0.95);
+    color: white;
+    border-radius: 8px;
+    padding: 15px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    pointer-events: none;
+    z-index: 10;
+    font-size: 14px;
+    
+    /* [關鍵] Positioned to the left of its parent (#timeline-container) */
+    right: 100%;
+    top: 20px;
+    margin-right: 10px;
+}
+
+#timeline-modal.visible {
+    display: block;
+}
+
+/* Modal shared styles */
+#modal-date, #timeline-modal-date {
     margin: 0 0 10px 0;
     font-size: 18px;
     border-bottom: 1px solid #666;
     padding-bottom: 5px;
 }
 
-#modal-total-usage {
+#modal-total-usage, #timeline-modal-total-usage {
     font-weight: bold;
-    color: #4CAF50; /* Bright color for total time */
+    color: #4CAF50;
 }
 
-#modal-app-list {
+#modal-app-list, #timeline-modal-app-list {
     margin-top: 10px;
     max-height: 200px;
     overflow-y: auto;

@@ -15,16 +15,15 @@ const WEEK_SEGMENTS = 7; // 7 days per week
 const DAY_ANGLE = (2 * Math.PI) / WEEK_SEGMENTS; // Angle per day
 const MONDAY_OFFSET = -Math.PI / 2; // Set Monday (12 o'clock direction) as starting point
 const DAY_SEGMENT_HEIGHT = 25; // "Thickness" of each day's block
-const DOTS_PER_DAY = 100; // Number of dots generated per block. Warning: This number > 100 may cause significant performance degradation (lag).
-
-// Radius of each dot (pixels)
+const DOTS_PER_DAY = 100;
 const DOT_RADIUS = 3;
+const ANIMATION_DAY_DELAY = 50;
 
-// Animation configuration: animation delay per day (milliseconds)
-// Total animation duration approx: ANIMATION_DAY_DELAY * (total days)
-const ANIMATION_DAY_DELAY = 50; // 50ms * 38 days ≈ 1.9 seconds animation
+// [New] Timeline configuration
+const TIMELINE_PADDING = 30; // Top/Bottom padding for the timeline
+const TIMELINE_DAY_HEIGHT = 25; // Vertical space for each day on the timeline
 
-// Color scale (Quantize Scale): Maps usage time (continuous) to 5 discrete colors
+// Color scale
 const colorScale = d3.scaleQuantize()
     .range([
         "#cce5df", // very low
@@ -32,13 +31,17 @@ const colorScale = d3.scaleQuantize()
         "#86d1c0", // medium
         "#5cbea9", // high
         "#00a688"  // very high
-        // You can also use d3.schemeBlues[5] or d3.schemeGreens[5]
     ]);
 
 // DOM element selection
 const visContainer = d3.select("#vis-container");
-const modal = d3.select("#modal");
 const legendContainer = d3.select("#legend");
+const modal = d3.select("#modal");
+
+// [New] DOM selections for timeline
+const timelineContainer = d3.select("#timeline-container");
+const timelineModal = d3.select("#timeline-modal");
+
 
 // Helper functions for formatting
 const formatTime = (seconds) => {
@@ -55,32 +58,18 @@ const formatTime = (seconds) => {
 const formatDate = d3.timeFormat("%Y-%m-%d, %A"); // e.g., "2025-09-29, Monday"
 
 
-/* --- 2. Core Data Transformation (Option A) --- */
+/* --- 2. Core Data Transformation --- */
 
-/**
- * Convert "wide format" CSV data to "long format" for D3
- * @param {Array} rawData - Raw data loaded from d3.csv()
- * @returns {Array} - Processed daily data array
- */
 async function transformData(rawData) {
-    // 1. Get all date column names
-    // Exclude 'App name', 'Device', and 'Total Usage (seconds)'
+    // ... (Steps 1-4 are unchanged) ...
     const dateColumns = rawData.columns.filter(col => 
         col !== "App name" && col !== "Device" && col !== "Total Usage (seconds)"
     );
-
-    // 2. Create a Map to aggregate daily data
     const dailyDataMap = new Map();
-
-    // 3. Iterate through all apps (each row)
     rawData.forEach(appRow => {
         const appName = appRow["App name"];
-        
-        // 4. Iterate through all dates (each column)
         dateColumns.forEach(dateStr => {
             const usageSeconds = parseInt(appRow[dateStr] || 0, 10);
-
-            // Initialize if no data for this date
             if (!dailyDataMap.has(dateStr)) {
                 dailyDataMap.set(dateStr, {
                     dateString: dateStr,
@@ -88,12 +77,8 @@ async function transformData(rawData) {
                     apps: []
                 });
             }
-
-            // Get the day's data and update
             const dayData = dailyDataMap.get(dateStr);
             dayData.totalUsageSeconds += usageSeconds;
-
-            // Only add to app list if usage > 0 to avoid overly long lists
             if (usageSeconds > 0) {
                 dayData.apps.push({
                     name: appName,
@@ -103,25 +88,27 @@ async function transformData(rawData) {
         });
     });
 
-    // 5. Convert Map to array and calculate properties needed by d3.js
+    // 5. Convert Map to array and calculate properties
     let processedData = Array.from(dailyDataMap.values());
 
-    // 6. Parse dates, sort, and calculate 'dayOfWeek' and 'weekNumber'
+    // 6. Parse dates, sort, and calculate properties
     const parseDate = d3.timeParse("%B %d, %Y"); // e.g., "September 29, 2025"
     
     let processedDataWithNulls = processedData.map(d => {
-        const cleanedDateString = d.dateString.split('.')[0];
+        // [Key change from spec] Use spec's method to merge dates like "Oct 26" and "Oct 26.1"
+        const cleanedDateString = d.dateString.split('.')[0]; 
         const dateObj = parseDate(cleanedDateString);
 
         if (!dateObj) {
             console.warn(`Skipping unparseable date column: ${d.dateString}`);
             return null; 
         }
-        const dayOfWeek = (dateObj.getDay() + 6) % 7; 
+        const dayOfWeek = (dateObj.getDay() + 6) % 7; // Monday = 0
         
         return {
             ...d, 
             dateObj: dateObj,
+            cleanedDateString: cleanedDateString, // Store the cleaned string
             dayOfWeek: dayOfWeek,
             apps: d.apps.sort((a, b) => b.usage - a.usage) 
         };
@@ -130,24 +117,25 @@ async function transformData(rawData) {
     // (Step 2: Filter - remove null)
     processedData = processedDataWithNulls.filter(d => d !== null);
 
-    // (Step 3: Sort - *** must be after filter ***)
-    //          This ensures processedData[0] is a valid date
+    // (Step 3: Sort by date)
     processedData.sort((a, b) => a.dateObj - b.dateObj);
 
-    // (Step 4: Limit data range per specification - keep only until November 4, 2025)
-    const endDate = parseDate("November 4, 2025");
-    processedData = processedData.filter(d => d.dateObj <= endDate);
+    // [MODIFICATION] Removed the filter that limited data to "November 4, 2025"
+    // This allows the timeline to be scrollable with more data, as per new requirements.
+    // const endDate = parseDate("November 4, 2025");
+    // processedData = processedData.filter(d => d.dateObj <= endDate);
 
-    // 5. Calculate weekNumber and dayIndex - *** must be after sort and filter ***
-    const startDate = processedData[0].dateObj; // Safe now
+    // 5. Calculate weekNumber and dayIndex - *** must be after sort ***
+    if (processedData.length === 0) {
+        console.error("No valid data found after transform.");
+        return [];
+    }
+    const startDate = processedData[0].dateObj;
 
     processedData.forEach((d, index) => {
-        // Calculate week number
         const dayDiff = d3.timeDay.count(startDate, d.dateObj);
-        d.weekNumber = Math.floor(dayDiff / 7); // 0 = week 1, 1 = week 2...
-        
-        // Store index to ensure Arc and Dot use the same index system
-        d.dayIndex = index; // 0 = day 1, 1 = day 2, ...
+        d.weekNumber = Math.floor(dayDiff / 7);
+        d.dayIndex = index;
     });
 
     console.log("Processed Data:", processedData);
@@ -155,56 +143,23 @@ async function transformData(rawData) {
 }
 
 /**
- * Based on daily data, generate randomly distributed dots within d3.arc blocks.
- * @param {Array} dayData - Processed 38 days of data
- * @param {d3.ScaleLinear} radiusScale - D3 radius scale
- * @param {d3.ScaleQuantize} colorScale - D3 color scale
- * @returns {Array} - A flat array containing all dots (e.g., 38*50=1900)
+ * (Unchanged) Generates dot data for the spiral
  */
 function generateDotData(dayData, radiusScale, colorScale) {
     const allDots = [];
-    console.log("=== generateDotData Debug ===");
-    console.log("First 3 days:");
-    dayData.slice(0, 3).forEach((day, i) => {
-        console.log(`  i=${i}, date=${day.dateString}, dayOfWeek=${day.dayOfWeek}, ` +
-                    `innerR=${radiusScale(i).toFixed(1)}, ` +
-                    `startAngle=${(day.dayOfWeek * DAY_ANGLE + MONDAY_OFFSET).toFixed(2)}`);
-    });
-    console.log("Last 3 days:");
-    dayData.slice(-3).forEach((day, i) => {
-        const actualIndex = dayData.length - 3 + i;
-        console.log(`  i=${actualIndex}, date=${day.dateString}, dayOfWeek=${day.dayOfWeek}, ` +
-                    `innerR=${radiusScale(actualIndex).toFixed(1)}, ` +
-                    `startAngle=${(day.dayOfWeek * DAY_ANGLE + MONDAY_OFFSET).toFixed(2)}`);
-    });
-
+    
     dayData.forEach((day) => {
-        // Use dayIndex stored in data object to ensure consistency with Arc
         const i = day.dayIndex;
-
-        // Get the day's boundaries
-
         const innerR = radiusScale(i);
         const outerR = radiusScale(i) + DAY_SEGMENT_HEIGHT;
         const startAngle = day.dayOfWeek * DAY_ANGLE + MONDAY_OFFSET;
         const endAngle = (day.dayOfWeek + 1) * DAY_ANGLE + MONDAY_OFFSET;
-        
         const dayColor = colorScale(day.totalUsageSeconds);
 
-        // Generate DOTS_PER_DAY dots for this day
         for (let j = 0; j < DOTS_PER_DAY; j++) {
-            
-            // 1. Get random angle
             const randomAngle = Math.random() * (endAngle - startAngle) + startAngle;
-            
-            // 2. Get random radius
-            // Key: Use Math.sqrt(Math.random()) 
-            // to ensure dots are uniformly distributed in "area", not in "radius"
             const randomT = Math.sqrt(Math.random());
             const randomRadius = innerR + randomT * (outerR - innerR);
-            
-            // 3. Convert polar coordinates (r, angle) to Cartesian (x, y)
-            // D3/SVG angle 0 is 3 o'clock direction, -PI/2 is 12 o'clock direction
             const x = randomRadius * Math.cos(randomAngle);
             const y = randomRadius * Math.sin(randomAngle);
 
@@ -212,75 +167,58 @@ function generateDotData(dayData, radiusScale, colorScale) {
                 x: x,
                 y: y,
                 color: dayColor,
-                dayIndex: i // Store day index for animation delay
+                dayIndex: i
             });
         }
     });
-    console.log("Total dots:", allDots.length);
-
     return allDots;
 }
 
 
-/* --- 3. Render Visualization (Render Function) --- */
+/* --- 3. Render Visualization (Spiral) --- */
 
 /**
- * Render main spiral chart
- * @param {Array} data - Processed daily data
- * @param {d3.Selection} svg - D3 SVG selector
+ * (Unchanged) Render main spiral chart
  */
 function renderSpiral(data, svg) {
     
-    // Get current container width/height for responsive design
     const containerRect = visContainer.node().getBoundingClientRect();
     const width = containerRect.width - margin.left - margin.right;
     const height = containerRect.height - margin.top - margin.bottom;
     const radius = Math.min(width, height) / 2;
 
-    // Move SVG center point to canvas center
     const g = svg
-        .attr("viewBox", `0 0 ${containerRect.width} ${containerRect.height}`) // Responsive key
-        .html(null) // Clear old chart (for redraw)
+        .attr("viewBox", `0 0 ${containerRect.width} ${containerRect.height}`)
+        .html(null) // Clear old chart
         .append("g")
         .attr("transform", `translate(${containerRect.width / 2}, ${containerRect.height / 2})`);
 
-    // --- Set up scales (Scales) ---
-
-    // 1. Radius (Radius) scale (logic unchanged)
+    // --- Set up scales ---
     const innerRadiusStart = 40;
     const maxDayIndex = data.length - 1;
     const radiusScale = d3.scaleLinear()
         .domain([0, maxDayIndex])
         .range([innerRadiusStart, radius - DAY_SEGMENT_HEIGHT]);
 
-    // 2. Color (Color) scale (logic unchanged)
     const maxUsage = d3.max(data, d => d.totalUsageSeconds);
     colorScale.domain([0, maxUsage]);
     
-    // --- [ New ] Generate dot data ---
     const dotData = generateDotData(data, radiusScale, colorScale);
 
-    // --- Render Arc (arcs) - [ Modified ] ---
-    // These <path> are now "invisible" interactive layers
-
-    // 1. Create Arc generator (logic unchanged)
-    // Use dayIndex from data object to ensure consistency with Dot rendering
+    // --- Render Arc (Interaction Layer) ---
     const arcGenerator = d3.arc()
         .innerRadius(d => radiusScale(d.dayIndex))
         .outerRadius(d => radiusScale(d.dayIndex) + DAY_SEGMENT_HEIGHT)
         .startAngle(d => d.dayOfWeek * DAY_ANGLE)
         .endAngle(d => (d.dayOfWeek + 1) * DAY_ANGLE)
-        .cornerRadius(0); // continuous seams
+        .cornerRadius(0);
 
-    // 2. Data binding (Data Join)
-    // No longer pass index parameter since arcGenerator reads dayIndex from data object
     g.selectAll("path.day-segment")
         .data(data)
         .join("path")
-        .attr("class", "day-segment") // style.css will style it
-        .attr("d", d => arcGenerator(d)) // Only pass data object
-        .attr("fill", "none") // Set transparent so dots below are visible
-        // Interactivity (Interactivity)
+        .attr("class", "day-segment")
+        .attr("d", arcGenerator)
+        .attr("fill", "none")
         .on("mouseover", (event, d) => {
             showModal(event, d);
         })
@@ -288,63 +226,179 @@ function renderSpiral(data, svg) {
             hideModal();
         });
 
-    // --- Render dots (Dots) ---
-    // This is the new "visual layer"
-    
+    // --- Render dots (Visual Layer) ---
     g.selectAll("circle.dot")
         .data(dotData)
         .join("circle")
             .attr("class", "dot")
-            // Set dot position and style
             .attr("cx", d => d.x)
             .attr("cy", d => d.y)
             .attr("r", DOT_RADIUS)
             .attr("fill", d => d.color)
-            // Key: Let dots "pass through" mouse events,
-            // so mouse can hover over the .day-segment paths below
             .style("pointer-events", "none")
-            
-            // [ New ] Animation effect
-            .style("opacity", 0) // Initial state: fully transparent
+            .style("opacity", 0)
         .transition()
-            // Animation duration 500ms per dot
             .duration(500) 
-            // Set delay based on day index (dayIndex)
-            // This creates "fill from inside to outside" animation effect
             .delay(d => d.dayIndex * ANIMATION_DAY_DELAY)
-            .style("opacity", 1); // Final state: fully opaque
+            .style("opacity", 1);
 
-    // 3. Render legend (This remains the same)
     renderLegend(colorScale);
 }
 
 
-/* --- 4. Interaction Helper Functions (Modal & Legend) --- */
+/* --- 4. [NEW] Render Timeline --- */
+
+// Define arrow paths
+const ARROW_UP_PATH = "M4 12 L12 4 L20 12";
+const ARROW_DOWN_PATH = "M4 12 L12 20 L20 12";
+
+// State variable to store timeline drag position
+let currentTimelineY = 0;
 
 /**
- * Show interaction modal
- * @param {Event} event - D3 mouse event
- * @param {object} d - Bound daily data
+ * [NEW] Renders the draggable vertical timeline
+ * @param {Array} data - Processed daily data
+ * @param {d3.Selection} svg - The timeline's SVG element
+ */
+function renderTimeline(data, svg) {
+    // 1. Get dimensions
+    const containerRect = timelineContainer.node().getBoundingClientRect();
+    const width = containerRect.width;
+    const height = containerRect.height;
+    
+    // 2. Define content height and Y-scale
+    // Oldest date at bottom, newest at top
+    const contentHeight = data.length * TIMELINE_DAY_HEIGHT + TIMELINE_PADDING * 2;
+    const yDomain = d3.extent(data, d => d.dateObj);
+    const yScale = d3.scaleTime()
+        .domain(yDomain)
+        .range([contentHeight - TIMELINE_PADDING, TIMELINE_PADDING]); // [Bottom, Top]
+
+    // 3. Define drag boundaries
+    const maxDragY = 0;
+    const minDragY = Math.min(0, height - contentHeight); // Will be 0 or negative
+    let isDragging = false;
+    
+    // Ensure currentTimelineY is within new bounds (on resize)
+    currentTimelineY = Math.max(minDragY, Math.min(maxDragY, currentTimelineY));
+
+    // 4. Clear SVG and setup structure
+    svg.html(null); // Clear on redraw
+
+    // Append arrows (fixed position)
+    svg.append("path")
+        .attr("class", "timeline-arrow")
+        .attr("id", "timeline-arrow-up")
+        .attr("d", ARROW_UP_PATH)
+        .attr("stroke", "#333")
+        .attr("stroke-width", 2)
+        .attr("fill", "none")
+        .style("transform", `translate(${width / 2 - 12}px, 5px)`);
+
+    svg.append("path")
+        .attr("class", "timeline-arrow")
+        .attr("id", "timeline-arrow-down")
+        .attr("d", ARROW_DOWN_PATH)
+        .attr("stroke", "#333")
+        .attr("stroke-width", 2)
+        .attr("fill", "none")
+        .style("transform", `translate(${width / 2 - 12}px, ${height - 20}px)`);
+
+    // Append draggable content group
+    const g = svg.append("g")
+        .attr("id", "timeline-content-group")
+        .attr("transform", `translate(0, ${currentTimelineY})`);
+
+    // 5. Define Drag Handler
+    const dragHandler = d3.drag()
+        .on("start", (event) => {
+            isDragging = true;
+            g.style("cursor", "grabbing");
+        })
+        .on("drag", (event) => {
+            // Calculate new Y, clamped within boundaries
+            const newY = currentTimelineY + event.dy;
+            currentTimelineY = Math.max(minDragY, Math.min(maxDragY, newY));
+            g.attr("transform", `translate(0, ${currentTimelineY})`);
+            
+            // Update arrows based on new position
+            updateTimelineArrows(svg, currentTimelineY, minDragY, maxDragY);
+        })
+        .on("end", () => {
+            isDragging = false;
+            g.style("cursor", "grab");
+        });
+
+    svg.call(dragHandler); // Apply drag to the whole SVG
+
+    // 6. Draw axis line
+    g.append("line")
+        .attr("class", "timeline-axis-line")
+        .attr("x1", width / 2)
+        .attr("x2", width / 2)
+        .attr("y1", TIMELINE_PADDING)
+        .attr("y2", contentHeight - TIMELINE_PADDING);
+
+    // 7. Draw timeline dots
+    g.selectAll("circle.timeline-dot")
+        .data(data)
+        .join("circle")
+        .attr("class", "timeline-dot")
+        .attr("cx", width / 2)
+        .attr("cy", d => yScale(d.dateObj))
+        .attr("r", 5)
+        .on("mouseover", (event, d) => {
+            if (isDragging) return; // [Key] Don't trigger hover while dragging
+            
+            // Dispatch custom event for cross-component communication
+            document.body.dispatchEvent(new CustomEvent('datehover', {
+                detail: d // Pass the day's data
+            }));
+        })
+        .on("mouseout", () => {
+            if (isDragging) return;
+            
+            document.body.dispatchEvent(new CustomEvent('dateout'));
+        });
+
+    // 8. Set initial arrow state
+    updateTimelineArrows(svg, currentTimelineY, minDragY, maxDragY);
+}
+
+/**
+ * [NEW] Show/hide timeline drag indicator arrows
+ */
+function updateTimelineArrows(svg, currentY, minY, maxY) {
+    // Show up arrow if we are not at the top
+    svg.select("#timeline-arrow-up")
+        .style("display", currentY < maxY ? "block" : "none");
+
+    // Show down arrow if we are not at the bottom
+    svg.select("#timeline-arrow-down")
+        .style("display", currentY > minY ? "block" : "none");
+}
+
+
+/* --- 5. Interaction Helper Functions --- */
+
+/**
+ * (Unchanged) Show interaction modal for Spiral
  */
 function showModal(event, d) {
     modal.classed("visible", true);
     
-    // Dynamically position modal based on mouse position
-    // Position modal at bottom-right of cursor
     const [x, y] = d3.pointer(event, document.body);
     modal
         .style("left", `${x + 15}px`)
         .style("top", `${y + 15}px`);
 
-    // Fill modal content
     modal.select("#modal-date").text(formatDate(d.dateObj));
     modal.select("#modal-total-usage").text(formatTime(d.totalUsageSeconds));
 
-    // Dynamically generate app list
     const appList = modal.select("#modal-app-list");
-    appList.html(null); // Clear old list
+    appList.html(null);
 
-    d.apps.slice(0, 10).forEach(app => { // Show max top 10
+    d.apps.slice(0, 10).forEach(app => {
         appList.append("div")
             .attr("class", "app-item")
             .html(`
@@ -359,24 +413,55 @@ function showModal(event, d) {
 }
 
 /**
- * Hide interaction modal
+ * (Unchanged) Hide interaction modal for Spiral
  */
 function hideModal() {
     modal.classed("visible", false);
 }
 
 /**
- * Render color legend
- * @param {d3.ScaleQuantize} scale - Color scale used
+ * [NEW] Show fixed modal for Timeline
+ */
+function showTimelineModal(d) {
+    timelineModal.classed("visible", true);
+    
+    // Position is fixed by CSS, just fill content
+    timelineModal.select("#timeline-modal-date").text(formatDate(d.dateObj));
+    timelineModal.select("#timeline-modal-total-usage").text(formatTime(d.totalUsageSeconds));
+
+    const appList = timelineModal.select("#timeline-modal-app-list");
+    appList.html(null);
+
+    d.apps.slice(0, 10).forEach(app => {
+        appList.append("div")
+            .attr("class", "app-item")
+            .html(`
+                <span class="app-name">${app.name}</span>
+                <span class="app-usage">${formatTime(app.usage)}</span>
+            `);
+    });
+    
+    if (d.apps.length > 10) {
+        appList.append("div").style("margin-top", "5px").style("color", "#999").text("...and other apps");
+    }
+}
+
+/**
+ * [NEW] Hide fixed modal for Timeline
+ */
+function hideTimelineModal() {
+    timelineModal.classed("visible", false);
+}
+
+
+/**
+ * (Unchanged) Render color legend
  */
 function renderLegend(scale) {
-    legendContainer.html("<h4>Daily Usage Time</h4>"); // Clear and reset title
+    legendContainer.html("<h4>Daily Usage Time</h4>"); 
 
-    // Quantize scale needs .thresholds() or .quantiles()
-    // For simplicity, we directly use scale.range() and scale.invertExtent()
-    
     scale.range().forEach(color => {
-        const extent = scale.invertExtent(color); // Find range [min, max] for this color
+        const extent = scale.invertExtent(color);
         const text = `${formatTime(Math.round(extent[0]))} - ${formatTime(Math.round(extent[1]))}`;
 
         const item = legendContainer.append("div")
@@ -391,40 +476,78 @@ function renderLegend(scale) {
     });
 }
 
+/**
+ * [NEW] Sets up global event listeners for cross-component communication
+ * @param {d3.Selection} spiralSvg - The spiral chart's SVG element
+ */
+function setupAppEventListeners(spiralSvg) {
+    
+    // Listen for hover events FROM the timeline
+    document.body.addEventListener('datehover', (e) => {
+        const hoveredData = e.detail;
+        
+        // 1. Show the timeline modal
+        showTimelineModal(hoveredData);
+        
+        // 2. Highlight/Dim the spiral chart
+        spiralSvg.selectAll(".day-segment")
+            .classed("dimmed", d => d.dateObj !== hoveredData.dateObj)
+            .classed("highlighted", d => d.dateObj === hoveredData.dateObj);
+    });
 
-/* --- 5. Main Program Execution --- */
+    // Listen for mouseout events FROM the timeline
+    document.body.addEventListener('dateout', () => {
+        // 1. Hide the timeline modal
+        hideTimelineModal();
+        
+        // 2. Reset the spiral chart styles
+        spiralSvg.selectAll(".day-segment")
+            .classed("dimmed", false)
+            .classed("highlighted", false);
+    });
+}
+
+
+/* --- 6. Main Program Execution --- */
 
 /**
- * Main execution function (async)
+ * [MODIFIED] Main execution function
  */
 async function main() {
     try {
-        // 1. Load data
+        // 1. Load and transform data
         const rawData = await d3.csv("app_usage.csv");
-        
-        // 2. Transform data (Option A)
         const processedData = await transformData(rawData);
         
+        if (processedData.length === 0) {
+            visContainer.text("No data to display. Check CSV file or console.");
+            return;
+        }
+
         console.log("--- Check transformed data (processedData) ---");
-        console.log(processedData);
-
         console.log("Total days:", processedData.length);
-        console.log("First day:", processedData[0].dateString, processedData[0].dayOfWeek);
-        console.log("Last day:", processedData[processedData.length-1].dateString, processedData[processedData.length-1].dayOfWeek);
+        console.log("First day:", processedData[0].cleanedDateString, processedData[0].dayOfWeek);
+        console.log("Last day:", processedData[processedData.length-1].cleanedDateString, processedData[processedData.length-1].dayOfWeek);
 
-        // 3. Render chart
-        // Create SVG canvas
-        const svg = visContainer.append("svg");
+        // 3. Create SVG canvases
+        const spiralSvg = visContainer.append("svg");
+        const timelineSvg = d3.select("#timeline-svg"); // Select existing SVG from HTML
         
-        renderSpiral(processedData, svg);
+        // 4. Initial Render
+        renderSpiral(processedData, spiralSvg);
+        renderTimeline(processedData, timelineSvg);
 
-        // 4. (Optional) Listen for window resize, redraw
-        // For performance, use debounce (simple version)
+        // 5. [NEW] Setup cross-component listeners
+        setupAppEventListeners(spiralSvg);
+
+        // 6. [MODIFIED] Setup resize handler
         let resizeTimer;
         window.addEventListener("resize", () => {
             clearTimeout(resizeTimer);
             resizeTimer = setTimeout(() => {
-                renderSpiral(processedData, svg); // Redraw
+                console.log("Resizing...");
+                renderSpiral(processedData, spiralSvg);
+                renderTimeline(processedData, timelineSvg);
             }, 200);
         });
 
