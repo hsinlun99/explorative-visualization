@@ -17,7 +17,7 @@ const DAY_SEGMENT_HEIGHT = 25;
 const MIN_DOTS = 30; // 最少點數 (即使解鎖 0 次也有這些點，維持基本形狀)
 const MAX_DOTS = 200; // 最多點數 (解鎖次數最多時的密度)
 const DOT_RADIUS = 3;
-const ANIMATION_DAY_DELAY = 50;
+const ANIMATION_DAY_DELAY = 100;
 
 // [修改] Timeline configuration
 const TIMELINE_PADDING = 30;
