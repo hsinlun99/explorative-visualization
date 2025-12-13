@@ -83,7 +83,9 @@
             * `renderSpiral()` 函式現在採用「**雙層結構**」繪圖：
                 * **互動層 (Interaction Layer):** 繪製 38 個 `<path class="day-segment">` 元素。它們被設為 `fill: "none"`，僅保留 `stroke` (邊框)，並負責 `mouseover` 事件。
                 * **視覺層 (Visual Layer):** 繪製 (38 * `DOTS_PER_DAY`) 個 `<circle class="dot">` 元素。它們的 `fill` 由 `colorScale` 決定，並被設為 `pointer-events: none` 以「穿透」滑鼠事件。
+            * `renderTimeline`: 繪製時間軸圓點時，現在會直接呼叫 `showModal`，確保與螺旋圖有一致的 Tooltip 體驗。
         6.  **互動:** `showModal` / `hideModal` / `renderLegend`。
+             * `showModal`: **[新增]** 實作「智慧定位 (Smart Positioning)」邏輯。透過 `getBoundingClientRect` 偵測視窗邊界，當 Modal 接近螢幕底部或右側時，自動翻轉顯示位置（如改為顯示在上方），防止內容被遮擋。
         7.  **動畫:** `renderSpiral` 負責計算 `maxUnlocks` 並定義 `densityScale`。函式中的 `.transition()` 和 `.delay()` 負責點的依序浮現動畫。
 
 ### 開發環境 (Environment)
@@ -121,6 +123,9 @@
     * **[ 關鍵修復 ]** `style.css` 中的 `pointer-events: fill;` 屬性確保了 `fill: "none"` 的路徑也能偵測到大範圍的 `hover`。
     * **反應:** 觸發 `showModal()` 函式，顯示該日的**日期**、**星期**、**總使用時數**，以及使用時間**前 5 名**的 App 列表。
     * **Modal 更新:** 除了日期與總時長外，現在 Modal 會額外顯示 **"Unlocks: [次數]"**，讓使用者能驗證視覺密度的準確性。
+    * **[新增] 統一體驗 (Unified Experience):** 使用者懸停於右側「時間軸 (Timeline)」的圓點時，現在也會觸發相同的 Modal，顯示該日的詳細資訊。
+    * **[新增] 智慧防遮擋 (Smart Positioning):** 系統會自動計算滑鼠位置與視窗邊界的距離。若 Modal 在原位置（右下方）會被螢幕切掉，系統會自動將其翻轉至滑鼠上方或左側，確保資訊永遠清晰可見。
+    * **Modal 內容:** 顯示日期、總時長、**"Unlocks: [次數]"** 以及前 5 名 App。
 
 * **動畫：依序填滿 (Fill-in Animation):**
     * **觸發:** 頁面載入時。
