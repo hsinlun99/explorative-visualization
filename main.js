@@ -414,16 +414,15 @@ function updateTimelineArrows(svg, currentY, minY, maxY) {
 /* --- 5. Interaction Helper Functions (Unchanged Logic) --- */
 
 function showModal(event, d) {
-    modal.classed("visible", true);
-    const [x, y] = d3.pointer(event, document.body);
-    modal
-        .style("left", `${x + 15}px`)
-        .style("top", `${y + 15}px`);
+    // 1. [步驟一] 先填入內容 (Content Population)
+    // 必須先填內容，這樣瀏覽器才能算出正確的 Modal 高度
     modal.select("#modal-date").text(formatDate(d.dateObj));
+    
     modal.select("#modal-total-usage").html(`
         ${formatTime(d.totalUsageSeconds)}<br>
         <span style="font-size: 0.9em; color: #ccc;">Unlocks: ${d.unlockCount}</span>
     `);
+
     const appList = modal.select("#modal-app-list");
     appList.html(null);
     d.apps.slice(0, 5).forEach(app => {
@@ -437,6 +436,37 @@ function showModal(event, d) {
     if (d.apps.length > 10) {
         appList.append("div").style("margin-top", "5px").style("color", "#999").text("...and other apps");
     }
+
+    // 2. [步驟二] 讓 Modal 可見並計算尺寸 (Measure)
+    modal.classed("visible", true); // 先顯示，才能測量
+    
+    const modalNode = modal.node();
+    const modalRect = modalNode.getBoundingClientRect(); // 取得 Modal 當下的寬高
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    // 3. [步驟三] 計算位置 (Smart Positioning)
+    const [mouseX, mouseY] = d3.pointer(event, document.body);
+    const OFFSET = 15; // 滑鼠與 Modal 的間距
+
+    // 預設位置：右下
+    let finalX = mouseX + OFFSET;
+    let finalY = mouseY + OFFSET;
+
+    // 水平檢查：如果超出右邊界，改放左邊
+    if (finalX + modalRect.width > viewportWidth) {
+        finalX = mouseX - modalRect.width - OFFSET;
+    }
+
+    // 垂直檢查：如果超出下邊界，改放上面 [關鍵修正]
+    if (finalY + modalRect.height > viewportHeight) {
+        finalY = mouseY - modalRect.height - OFFSET;
+    }
+
+    // 4. [步驟四] 套用位置
+    modal
+        .style("left", `${finalX}px`)
+        .style("top", `${finalY}px`);
 }
 
 function hideModal() {
