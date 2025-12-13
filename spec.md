@@ -14,33 +14,36 @@
 ## 2. 資料規格 (Data Specification)
 
 ### 資料來源 (Data Source)
-透過開發者的 Andriod 手機，藉由 StayFree 這個 App monitor 並匯出的 CSV 資料 (`app_usage.csv`)。
+透過開發者的 Andriod 手機，藉由 StayFree 這個 App monitor 並匯出的 CSV 資料。
+1.  **`app_usage.csv`**: 記錄各個 App 每日的使用**時長**（秒數）。
+2.  **`unlock.csv`**: 記錄每日的手機**解鎖次數**（次數）。
 
 ### 原始資料結構 (Raw Data Schema)
-CSV 資料為「**寬格式 (Wide Format)**」。
+兩者 CSV 資料為「**寬格式 (Wide Format)**」。
 * 每一**列 (Row)** 代表一個 **App** (e.g., "Instagram")。
-* 每一**欄 (Column)** 代表一個 **日期** (e.g., "September 29, 2025")。
-* 儲存格中的值為該 App 於該日的**使用秒數 (int64)**。
+* 每一**欄 (Column)** 代表一個 **日期** (e.g., "November 16, 2025")。
+* **值 (Values)**: 
+    * Usage: 秒數 (int64)。
+    * Unlock: 次數 (float64/int)。
 
 ### 資料前處理 (Data Preprocessing)
-**[ 關鍵 ]** 原始資料格式 (寬格式) 不符合 D3.js 繪製螺旋圖的需求 (長格式)。因此，此專案在 `main.js` 中執行一個 `transformData` 函式，於瀏覽器端即時進行資料轉換。
+***[ 架構變更 ]** 採用平行載入與 Map 查詢合併策略。
 
-此函式執行以下任務：
-
-1.  **寬轉長 (Pivot/Melt):** 將 (Apps x N 天) 的資料，轉換為 (N 天) 的資料陣列。
-2.  **建立「每日物件」:** * 使用 `Map` 結構，以「日期字串」為 `key`，來匯總當日的 `totalUsageSeconds` 和 `apps` 陣列。
-    * **日期清理 (Date Cleaning):** 為處理 CSV 中重複的日期欄位 (e.g., `"October 26, 2025"` 和 `"October 26, 2025.1"` )，`transformData` 會使用 `dateString.split('.')[0]` 來取得乾淨的 `key`，從而自動將重複日期的資料**合併累加**到同一個「每日物件」中。
-    * **保留 0-Usage 日子:** 此函式**會**保留 `totalUsageSeconds === 0` 的日子，以便在圖表上正確呈現（顯示為邊框和最淺色的點）。
-3.  **計算屬性:**
-    * **日期解析:** 使用 `d3.timeParse()` 將 `dateString` 轉為 JavaScript `Date` 物件 (儲存為 `dateObj`)。
-    * **排序:** **(重要)** 必須先依 `dateObj` 將所有日子**正確排序**。
-    * **計算 `dayOfWeek`:** 計算星期幾 (e.g., 週一=0, 週二=1 ... 週日=6)，用於 `d3.arc` 的角度計算。
-    * **(註)** `weekNumber` 已被移除，不再需要。
+1.  **平行載入 (Parallel Loading):** 使用 `Promise.all()` 同時請求兩個 CSV 檔案，確保資料同步就緒。
+2.  **解鎖資料解析 (Unlock Parsing):** * 執行 `parseUnlockData` 函式。
+    * 建立 `Map<DateString, Count>` 結構，以「乾淨的日期字串」為 Key，提供 O(1) 的快速查詢。
+    * 處理日期欄位可能的重複後綴 (e.g., `.1`) 並進行加總。
+3.  **主轉換流程 (Main Transformation):**
+    * 在 `transformData` 處理 Usage 資料生成「每日物件」時，透過 `dateString` 查詢上述的 `Map`。
+    * **注入屬性:** 將查詢到的 `unlockCount` 注入到該日物件中（若無資料則預設為 0）。
+    * 其餘邏輯（寬轉長、日期排序、App 排序）維持不變。
 
 ## 3. 視覺化設計與敘事 (Visualization Design & Narrative)
 
 ### 視覺風格 (Visual Style)
-簡潔、現代。核心視覺從「單調色塊」改為「**點陣紋理 (Stippled Texture)**」，增加視覺豐富性。色階應清晰易讀，代表從「低使用量」到「高使用量」的強度。
+核心視覺維持「**點陣紋理 (Stippled Texture)**」，但賦予了數據意義：
+* **顏色 (Color):** 代表 **使用總時長 (Total Usage)**。顏色越深，使用時間越長。
+* **密度 (Density):** 代表 **解鎖次數 (Unlock Count)**。點越密集，代表該日手機開關頻率越高（碎片化程度高）。
 
 ## 4. 技術堆疊 (Tech Stack)
 
@@ -68,18 +71,20 @@ CSV 資料為「**寬格式 (Wide Format)**」。
             * `DOTS_PER_DAY`: (e.g., 50) 每個區塊生成的點數（效能關鍵）。
             * `DOT_RADIUS`: (e.g., 1.5) 每個點的半徑。
             * `ANIMATION_DAY_DELAY`: (e.g., 40) 每日動畫的延遲毫秒。
-        2.  **資料處理:** 包含並執行 `transformData` 函式 (詳見 2.3 節)。
+            * `MIN_DOTS` (e.g., 30) 與 `MAX_DOTS` (e.g., 200)，定義視覺密度的上下限，確保視覺可讀性與效能。
+        2.  **資料處理:** 實作 `parseUnlockData` 與更新後的 `transformData`。
         3.  **輔助函式 (New):**
-            * `generateDotData`: 一個新函式，負責在 `d3.arc` 邊界內生成隨機的 `(x, y)` 點座標。使用 `Math.sqrt(Math.random())` 來確保點在「面積」上均勻分佈。
+            * `generateDotData`: 修改為接收 `densityScale`，並針對每一天的 `unlockCount` 動態計算該生成的點數。使用 `Math.sqrt(Math.random())` 來確保點在「面積」上均勻分佈。
         4.  **比例尺 (Scales):**
             * `d3.scaleQuantize()`: `colorScale`，將 `totalUsageSeconds` 映射到離散的顏色。
             * `d3.scaleLinear()`: `radiusScale`，將「每日索引 `i`」映射到 `innerRadius`。
+            * `densityScale`: 使用 `d3.scaleLinear` 將 `[0, maxUnlocks]` 映射至 `[MIN_DOTS, MAX_DOTS]`。
         5.  **繪圖 (Render):**
             * `renderSpiral()` 函式現在採用「**雙層結構**」繪圖：
                 * **互動層 (Interaction Layer):** 繪製 38 個 `<path class="day-segment">` 元素。它們被設為 `fill: "none"`，僅保留 `stroke` (邊框)，並負責 `mouseover` 事件。
                 * **視覺層 (Visual Layer):** 繪製 (38 * `DOTS_PER_DAY`) 個 `<circle class="dot">` 元素。它們的 `fill` 由 `colorScale` 決定，並被設為 `pointer-events: none` 以「穿透」滑鼠事件。
         6.  **互動:** `showModal` / `hideModal` / `renderLegend`。
-        7.  **動畫:** `renderSpiral` 函式中的 `.transition()` 和 `.delay()` 負責點的依序浮現動畫。
+        7.  **動畫:** `renderSpiral` 負責計算 `maxUnlocks` 並定義 `densityScale`。函式中的 `.transition()` 和 `.delay()` 負責點的依序浮現動畫。
 
 ### 開發環境 (Environment)
 使用本地伺服器（如 VS Code "Live Server"）以避免 `d3.csv()` 的 CORS 錯誤。
@@ -115,6 +120,7 @@ CSV 資料為「**寬格式 (Wide Format)**」。
     * **技術:** `hover` 事件被一個隱形的 `<path class="day-segment">` 偵聽。
     * **[ 關鍵修復 ]** `style.css` 中的 `pointer-events: fill;` 屬性確保了 `fill: "none"` 的路徑也能偵測到大範圍的 `hover`。
     * **反應:** 觸發 `showModal()` 函式，顯示該日的**日期**、**星期**、**總使用時數**，以及使用時間**前 10 名**的 App 列表。
+    * **Modal 更新:** 除了日期與總時長外，現在 Modal 會額外顯示 **"Unlocks: [次數]"**，讓使用者能驗證視覺密度的準確性。
 
 * **動畫：依序填滿 (Fill-in Animation):**
     * **觸發:** 頁面載入時。
