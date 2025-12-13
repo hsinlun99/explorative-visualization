@@ -52,10 +52,41 @@ const formatDate = d3.timeFormat("%Y-%m-%d, %A");
 // [新增] Timeline date label format
 const formatTimelineDate = d3.timeFormat("%m/%d"); // e.g., "09/29"
 
+/**
+ * [NEW] 解析 Unlock 資料
+ * 將寬格式 CSV 轉為 Map<DateString, Count>
+ * Key 為 "乾淨的日期字串" (e.g., "October 26, 2025")
+ */
+function parseUnlockData(unlockRaw) {
+    const unlockMap = new Map();
+    
+    // 取得所有日期欄位 (排除非日期的 Metadata 欄位)
+    // 假設 unlock.csv 的欄位結構與 app_usage 類似，日期在欄位上
+    const dateColumns = unlockRaw.columns.filter(col => 
+        col !== "Unnamed: 0" && col !== "Total Usage"
+    );
+
+    dateColumns.forEach(rawDateStr => {
+        // 清理日期字串 (移除可能的 .1, .2 後綴) 以便與 Usage 資料對齊
+        const cleanDateStr = rawDateStr.split('.')[0];
+
+        // 計算該欄位(日期)的總和
+        // 以防 CSV 有多列資料，我們將該欄的所有數值加總
+        const totalUnlocks = d3.sum(unlockRaw, d => parseFloat(d[rawDateStr] || 0));
+        
+        // 如果該日期已經存在 (因為 .1 .2 的關係)，則累加
+        const currentVal = unlockMap.get(cleanDateStr) || 0;
+        unlockMap.set(cleanDateStr, currentVal + totalUnlocks);
+    });
+
+    console.log(`Parsed ${unlockMap.size} days of unlock data.`);
+    return unlockMap;
+}
+
 
 /* --- 2. Core Data Transformation (Unchanged) --- */
 
-async function transformData(rawData) {
+async function transformData(rawData, unlockMap) {
     const dateColumns = rawData.columns.filter(col => 
         col !== "App name" && col !== "Device" && col !== "Total Usage (seconds)"
     );
@@ -94,12 +125,16 @@ async function transformData(rawData) {
             return null; 
         }
         const dayOfWeek = (dateObj.getDay() + 6) % 7;
+
+        // 從 unlockMap 取得對應的解鎖次數，若無則預設為 0
+        const unlockCount = unlockMap.get(cleanedDateString) || 0;
         
         return {
             ...d, 
             dateObj: dateObj,
             cleanedDateString: cleanedDateString,
             dayOfWeek: dayOfWeek,
+            unlockCount: unlockCount, // 新增解鎖次數屬性
             apps: d.apps.sort((a, b) => b.usage - a.usage) 
         };
     });
@@ -452,8 +487,15 @@ function setupAppEventListeners(spiralSvg) {
 
 async function main() {
     try {
-        const rawData = await d3.csv("app_usage.csv");
-        const processedData = await transformData(rawData);
+        const [rawData, unlockRaw] = await Promise.all([
+            d3.csv("app_usage.csv"),
+            d3.csv("unlock.csv")
+        ]);
+
+        console.log("Raw Data Loaded:", rawData, unlockRaw);
+
+        const unlockMap = parseUnlockData(unlockRaw);
+        const processedData = await transformData(rawData, unlockMap);
         
         if (processedData.length === 0) {
             visContainer.text("No data to display. Check CSV file or console.");
