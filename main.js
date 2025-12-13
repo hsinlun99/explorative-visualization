@@ -14,7 +14,8 @@ const WEEK_SEGMENTS = 7;
 const DAY_ANGLE = (2 * Math.PI) / WEEK_SEGMENTS;
 const MONDAY_OFFSET = -Math.PI / 2;
 const DAY_SEGMENT_HEIGHT = 25;
-const DOTS_PER_DAY = 100;
+const MIN_DOTS = 30;  // 最少點數 (即使解鎖 0 次也有這些點，維持基本形狀)
+const MAX_DOTS = 200; // 最多點數 (解鎖次數最多時的密度)
 const DOT_RADIUS = 3;
 const ANIMATION_DAY_DELAY = 50;
 
@@ -161,7 +162,7 @@ async function transformData(rawData, unlockMap) {
 /**
  * (Unchanged) Generates dot data for the spiral
  */
-function generateDotData(dayData, radiusScale, colorScale) {
+function generateDotData(dayData, radiusScale, colorScale, densityScale) {
     const allDots = [];
     dayData.forEach((day) => {
         const i = day.dayIndex;
@@ -170,12 +171,18 @@ function generateDotData(dayData, radiusScale, colorScale) {
         const startAngle = day.dayOfWeek * DAY_ANGLE + MONDAY_OFFSET;
         const endAngle = (day.dayOfWeek + 1) * DAY_ANGLE + MONDAY_OFFSET;
         const dayColor = colorScale(day.totalUsageSeconds);
-        for (let j = 0; j < DOTS_PER_DAY; j++) {
+
+        const dotsCount = densityScale(day.unlockCount || 0);
+
+        for (let j = 0; j < dotsCount; j++) {
             const randomAngle = Math.random() * (endAngle - startAngle) + startAngle;
+
             const randomT = Math.sqrt(Math.random());
             const randomRadius = innerR + randomT * (outerR - innerR);
+
             const x = randomRadius * Math.cos(randomAngle);
             const y = randomRadius * Math.sin(randomAngle);
+
             allDots.push({ x: x, y: y, color: dayColor, dayIndex: i });
         }
     });
@@ -205,8 +212,13 @@ function renderSpiral(data, svg) {
 
     const maxUsage = d3.max(data, d => d.totalUsageSeconds);
     colorScale.domain([0, maxUsage]);
-    
-    const dotData = generateDotData(data, radiusScale, colorScale);
+
+    const maxUnlocks = d3.max(data, d => d.unlockCount) || 10;
+    const densityScale = d3.scaleLinear()
+        .domain([0, maxUnlocks])
+        .range([MIN_DOTS, MAX_DOTS]);
+
+    const dotData = generateDotData(data, radiusScale, colorScale, densityScale);
 
     const arcGenerator = d3.arc()
         .innerRadius(d => radiusScale(d.dayIndex))
@@ -408,10 +420,13 @@ function showModal(event, d) {
         .style("left", `${x + 15}px`)
         .style("top", `${y + 15}px`);
     modal.select("#modal-date").text(formatDate(d.dateObj));
-    modal.select("#modal-total-usage").text(formatTime(d.totalUsageSeconds));
+    modal.select("#modal-total-usage").html(`
+        ${formatTime(d.totalUsageSeconds)}<br>
+        <span style="font-size: 0.9em; color: #ccc;">Unlocks: ${d.unlockCount}</span>
+    `);
     const appList = modal.select("#modal-app-list");
     appList.html(null);
-    d.apps.slice(0, 10).forEach(app => {
+    d.apps.slice(0, 5).forEach(app => {
         appList.append("div")
             .attr("class", "app-item")
             .html(`
